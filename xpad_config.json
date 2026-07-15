@@ -1,0 +1,81 @@
+{
+  "audio": {
+    "bufferFrames": 256,
+    "device": "",
+    "sampleRate": 48000
+  },
+  "bank": {
+    "active": "Default",
+    "directory": "samples"
+  },
+  "link": {
+    "quantum": 4.0,
+    "tempo": 126.0
+  },
+  "midi": {
+    "mappings": [
+      {
+        "note": 40,
+        "pad": 0,
+        "quant": 2,
+        "volume": 1.0
+      },
+      {
+        "note": 41,
+        "pad": 1,
+        "quant": 3,
+        "volume": 1.0
+      },
+      {
+        "note": 42,
+        "pad": 2,
+        "quant": 4,
+        "volume": 1.0
+      },
+      {
+        "note": 43,
+        "pad": 3,
+        "quant": 2,
+        "volume": 1.0
+      },
+      {
+        "note": 44,
+        "pad": 4,
+        "quant": 2,
+        "volume": 1.0
+      },
+      {
+        "note": 45,
+        "pad": 5,
+        "quant": 2,
+        "volume": 1.0
+      },
+      {
+        "note": 46,
+        "pad": 6,
+        "quant": 2,
+        "volume": 1.0
+      },
+      {
+        "note": 47,
+        "pad": 7,
+        "quant": 2,
+        "volume": 1.0
+      }
+    ],
+    "port": "Midi Through:Midi Through Port-0 14:0"
+  },
+  "padQuantization": [
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2
+  ],
+  "ui": {
+    "masterVolume": 1.0
+  }
+}

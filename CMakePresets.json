@@ -1,0 +1,59 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Default",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "XPAD_USE_ABLETON_LINK": "OFF"
+      }
+    },
+    {
+      "name": "ableton-link",
+      "displayName": "Ableton Link SDK",
+      "inherits": "default",
+      "cacheVariables": {
+        "XPAD_USE_ABLETON_LINK": "ON",
+        "ABLETON_LINK_DIR": "${sourceDir}/ableton-link"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    },
+    {
+      "name": "ableton-link",
+      "configurePreset": "ableton-link"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ableton-link",
+      "configurePreset": "ableton-link",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
+
+
+
+
