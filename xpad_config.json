@@ -126,10 +126,10 @@
     2
   ],
   "ui": {
-    "filterAmount": -0.039370059967041016,
-    "globalQuantization": -1,
-    "masterVolume": 0.4803149700164795,
-    "pitchSemitones": 0.4724407196044922,
+    "filterAmount": -0.007874011993408203,
+    "globalQuantization": 1,
+    "masterVolume": 0.7952755689620972,
+    "pitchSemitones": -0.09448814392089844,
     "selectedSamplePath": "samples/rmx1000-claps-one-shot.wav"
   }
 }
