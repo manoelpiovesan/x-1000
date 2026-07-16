@@ -24,6 +24,17 @@
         "XPAD_USE_ABLETON_LINK": "ON",
         "ABLETON_LINK_DIR": "${sourceDir}/ableton-link"
       }
+    },
+    {
+      "name": "ableton-link-windows",
+      "displayName": "Ableton Link SDK (Windows Ninja)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-windows",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "XPAD_USE_ABLETON_LINK": "ON",
+        "ABLETON_LINK_DIR": "${sourceDir}/ableton-link"
+      }
     }
   ],
   "buildPresets": [
@@ -34,6 +45,10 @@
     {
       "name": "ableton-link",
       "configurePreset": "ableton-link"
+    },
+    {
+      "name": "ableton-link-windows",
+      "configurePreset": "ableton-link-windows"
     }
   ],
   "testPresets": [
@@ -47,6 +62,13 @@
     {
       "name": "ableton-link",
       "configurePreset": "ableton-link",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ableton-link-windows",
+      "configurePreset": "ableton-link-windows",
       "output": {
         "outputOnFailure": true
       }

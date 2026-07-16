@@ -46,17 +46,17 @@ jobs:
       - name: Configure
         shell: msys2 {0}
         run: |
-          cmake --preset ableton-link
+          cmake --preset ableton-link-windows
 
       - name: Build
         shell: msys2 {0}
         run: |
-          cmake --build --preset ableton-link
+          cmake --build --preset ableton-link-windows
 
       - name: Test
         shell: msys2 {0}
         run: |
-          ctest --preset ableton-link
+          ctest --preset ableton-link-windows
 
       - name: Package EXE and runtime DLLs
         shell: msys2 {0}
@@ -65,8 +65,8 @@ jobs:
           rm -rf dist
           mkdir -p dist
 
-          cp build/xpad_link.exe dist/
-          cp build/xpad_link_tests.exe dist/
+          cp build-windows/xpad_link.exe dist/
+          cp build-windows/xpad_link_tests.exe dist/
 
           # Try to copy dependent runtime DLLs from UCRT64.
           # If ntldd is unavailable for any reason, keep at least the executables.
@@ -84,5 +84,6 @@ jobs:
         with:
           name: xpad-link-windows
           path: dist/
+
 
 
