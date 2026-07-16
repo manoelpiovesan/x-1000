@@ -102,14 +102,29 @@ jobs:
           fi
 
           # Fallback for common dependencies in case ntldd misses indirect DLLs.
-          for dll in \
+          # Use globs to catch versioned names (e.g. librtmidi-7.dll).
+          for pattern in \
             libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll \
-            libglfw3.dll librtmidi.dll librubberband.dll libfftw3-3.dll libsamplerate-0.dll
+            glfw3.dll libglfw3.dll libglfw*.dll \
+            librtmidi*.dll \
+            librubberband*.dll libfftw3-3.dll libsamplerate-0.dll
           do
             for dir in /ucrt64/bin /mingw64/bin; do
-              [ -f "$dir/$dll" ] && cp -n "$dir/$dll" dist/ || true
+              for file in "$dir"/$pattern; do
+                [ -f "$file" ] && cp -n "$file" dist/ || true
+              done
             done
           done
+
+          # Fail fast if critical runtime DLLs are still missing from package.
+          if ! ls dist/*rtmidi*.dll >/dev/null 2>&1; then
+            echo "ERROR: RtMidi DLL was not packaged."
+            exit 1
+          fi
+          if ! ls dist/*glfw*.dll >/dev/null 2>&1; then
+            echo "ERROR: GLFW DLL was not packaged."
+            exit 1
+          fi
 
           ls -la dist
 
