@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 namespace xpad::gui {
 
@@ -18,6 +19,9 @@ struct GuiHandlers {
     std::function<void(float amount)>               onFilterChange;
     std::function<void(int sampleIndex)>            onSampleSelectionChange;
     std::function<void(int rulerIndex)>             onRulerChange;
+    std::function<void(bool enabled)>               onSetMidiLearnMode;
+    std::function<void(const std::string& control)> onBeginMidiLearn;
+    std::function<std::pair<std::string, std::string>()> onGetMidiStatus;
     std::function<void()>                           onSaveConfig;
 };
 
@@ -40,7 +44,10 @@ public:
         const std::vector<std::string>& audioDevices,
         const std::vector<std::string>& sampleNames,
         int& selectedSampleIndex,
-        int& activeRollButton
+        int& activeRollButton,
+        bool& midiLearnMode,
+        std::string& pendingMidiLearnControl,
+        const std::unordered_map<std::string, std::string>& midiBindings
     );
 
     [[nodiscard]] bool isOpen() const noexcept;

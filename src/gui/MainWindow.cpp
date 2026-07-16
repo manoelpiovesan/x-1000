@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace xpad::gui {
@@ -84,10 +85,17 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
                      const std::vector<std::string>& audioDevices,
                      const std::vector<std::string>& sampleNames,
                      int& selectedSampleIndex,
-                     int& activeRollButton) {
+                     int& activeRollButton,
+                     bool& midiLearnMode,
+                     std::string& pendingMidiLearnControl,
+                     const std::unordered_map<std::string, std::string>& midiBindings) {
     (void)scheduler;
     (void)midiPorts;
     (void)audioDevices;
+    auto bindingLabel = [&midiBindings](const std::string& id) -> std::string {
+        auto it = midiBindings.find(id);
+        return it == midiBindings.end() ? "-" : it->second;
+    };
 
     if (!impl_->window) return;
 
@@ -113,6 +121,24 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
                     snapshot.tempoBpm,
                     snapshot.beat);
 
+        if (handlers_.onGetMidiStatus) {
+            const auto [portLabel, msgLabel] = handlers_.onGetMidiStatus();
+            ImGui::Text("MIDI: %s", portLabel.c_str());
+            ImGui::TextDisabled("Last: %s", msgLabel.c_str());
+        }
+
+        bool learn = midiLearnMode;
+        if (ImGui::Checkbox("MIDI Learn Mode", &learn)) {
+            midiLearnMode = learn;
+            if (handlers_.onSetMidiLearnMode) handlers_.onSetMidiLearnMode(learn);
+        }
+        ImGui::SameLine();
+        if (!pendingMidiLearnControl.empty()) {
+            ImGui::Text("Aguardando MIDI para: %s", pendingMidiLearnControl.c_str());
+        } else if (midiLearnMode) {
+            ImGui::Text("Clique em MAP em um controle e mexa na controladora");
+        }
+
         ImGui::Spacing();
         ImGui::PushItemWidth(480.0f);
         std::vector<const char*> sampleNamesC;
@@ -125,6 +151,20 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
                 selectedSampleIndex = idx;
                 if (handlers_.onSampleSelectionChange) handlers_.onSampleSelectionChange(idx);
             }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("MAP PREV") && midiLearnMode) {
+                pendingMidiLearnControl = "sample_prev";
+                if (handlers_.onBeginMidiLearn) handlers_.onBeginMidiLearn("sample_prev");
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", bindingLabel("sample_prev").c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("MAP NEXT") && midiLearnMode) {
+                pendingMidiLearnControl = "sample_next";
+                if (handlers_.onBeginMidiLearn) handlers_.onBeginMidiLearn("sample_next");
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", bindingLabel("sample_next").c_str());
         } else {
             ImGui::TextDisabled("Nenhum sample encontrado em /samples");
         }
@@ -142,21 +182,33 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
             }
 
             if (ImGui::Button(kRollLabels[i], buttonSize)) {
-                // Toggle: clicking the active button deselects it (stops roll)
-                if (isActive) {
-                    activeRollButton = -1;
-                    cfg.globalQuantization = -1;
-                    if (handlers_.onRulerChange) handlers_.onRulerChange(-1);
+                if (midiLearnMode) {
+                    pendingMidiLearnControl = "roll_" + std::to_string(i);
+                    if (handlers_.onBeginMidiLearn) handlers_.onBeginMidiLearn(pendingMidiLearnControl);
                 } else {
-                    activeRollButton = i;
-                    cfg.globalQuantization = i;
-                    if (handlers_.onRulerChange) handlers_.onRulerChange(i);
+                    // Toggle: clicking the active button deselects it (stops roll)
+                    if (isActive) {
+                        activeRollButton = -1;
+                        cfg.globalQuantization = -1;
+                        if (handlers_.onRulerChange) handlers_.onRulerChange(-1);
+                    } else {
+                        activeRollButton = i;
+                        cfg.globalQuantization = i;
+                        if (handlers_.onRulerChange) handlers_.onRulerChange(i);
+                    }
                 }
             }
 
             if (isActive) {
                 ImGui::PopStyleColor(3);
             }
+
+            if (i == 4) {
+                ImGui::NewLine();
+            }
+            ImGui::SameLine();
+            const std::string rollId = "roll_" + std::to_string(i);
+            ImGui::TextDisabled("%s", bindingLabel(rollId).c_str());
         }
 
         ImGui::Spacing();
@@ -166,6 +218,13 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
             cfg.masterVolume = mv;
             if (handlers_.onMasterVolumeChange) handlers_.onMasterVolumeChange(mv);
         }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("MAP##master") && midiLearnMode) {
+            pendingMidiLearnControl = "master";
+            if (handlers_.onBeginMidiLearn) handlers_.onBeginMidiLearn("master");
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", bindingLabel("master").c_str());
         ImGui::PopItemWidth();
 
         float pitch = cfg.pitchSemitones;
@@ -174,6 +233,13 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
             cfg.pitchSemitones = pitch;
             if (handlers_.onPitchChange) handlers_.onPitchChange(pitch);
         }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("MAP##pitch") && midiLearnMode) {
+            pendingMidiLearnControl = "pitch";
+            if (handlers_.onBeginMidiLearn) handlers_.onBeginMidiLearn("pitch");
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", bindingLabel("pitch").c_str());
         ImGui::PopItemWidth();
 
         float filter = cfg.filterAmount;
@@ -182,6 +248,13 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
             cfg.filterAmount = filter;
             if (handlers_.onFilterChange) handlers_.onFilterChange(filter);
         }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("MAP##filter") && midiLearnMode) {
+            pendingMidiLearnControl = "filter";
+            if (handlers_.onBeginMidiLearn) handlers_.onBeginMidiLearn("filter");
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", bindingLabel("filter").c_str());
         ImGui::PopItemWidth();
 
 

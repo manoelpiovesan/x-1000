@@ -26,6 +26,16 @@ bool XPadConfig::save(const std::string& filePath) const {
             });
         }
 
+        auto& learn = j["midi"]["learnBindings"] = json::array();
+        for (const auto& b : midiLearnBindings) {
+            learn.push_back({
+                {"controlId", b.controlId},
+                {"type", b.messageType},
+                {"number", b.number},
+                {"channel", b.channel},
+            });
+        }
+
         j["bank"]["active"]    = activeBankName;
         j["bank"]["directory"] = samplesDirectory;
 
@@ -73,6 +83,18 @@ bool XPadConfig::load(const std::string& filePath) {
                     static_cast<std::uint8_t>(m.value("note", 0)),
                     m.value("volume", 1.0f),
                     m.value("quant", 2),
+                });
+            }
+        }
+
+        midiLearnBindings.clear();
+        if (j.contains("midi") && j["midi"].contains("learnBindings")) {
+            for (const auto& b : j["midi"]["learnBindings"]) {
+                midiLearnBindings.push_back({
+                    b.value("controlId", std::string{}),
+                    b.value("type", std::string{}),
+                    b.value("number", -1),
+                    b.value("channel", -1),
                 });
             }
         }

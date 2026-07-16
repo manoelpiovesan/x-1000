@@ -13,6 +13,56 @@
     "tempo": 126.0
   },
   "midi": {
+    "learnBindings": [
+      {
+        "channel": 0,
+        "controlId": "master",
+        "number": 4,
+        "type": "cc"
+      },
+      {
+        "channel": 0,
+        "controlId": "pitch",
+        "number": 2,
+        "type": "cc"
+      },
+      {
+        "channel": 0,
+        "controlId": "filter",
+        "number": 1,
+        "type": "cc"
+      },
+      {
+        "channel": 0,
+        "controlId": "roll_4",
+        "number": 39,
+        "type": "note"
+      },
+      {
+        "channel": 0,
+        "controlId": "roll_1",
+        "number": 41,
+        "type": "note"
+      },
+      {
+        "channel": 0,
+        "controlId": "roll_2",
+        "number": 42,
+        "type": "note"
+      },
+      {
+        "channel": 0,
+        "controlId": "roll_3",
+        "number": 43,
+        "type": "note"
+      },
+      {
+        "channel": 0,
+        "controlId": "roll_0",
+        "number": 40,
+        "type": "note"
+      }
+    ],
     "mappings": [
       {
         "note": 40,
@@ -63,7 +113,7 @@
         "volume": 1.0
       }
     ],
-    "port": "Midi Through:Midi Through Port-0 14:0"
+    "port": "LPD8:LPD8 MIDI 1 28:0"
   },
   "padQuantization": [
     0,
@@ -76,10 +126,10 @@
     2
   ],
   "ui": {
-    "filterAmount": -0.09000000357627869,
-    "globalQuantization": 0,
-    "masterVolume": 0.5450000166893005,
-    "pitchSemitones": -0.20000000298023224,
-    "selectedSamplePath": "samples/rmx1000-snare-one-shot.wav"
+    "filterAmount": -0.039370059967041016,
+    "globalQuantization": -1,
+    "masterVolume": 0.4803149700164795,
+    "pitchSemitones": 0.4724407196044922,
+    "selectedSamplePath": "samples/rmx1000-claps-one-shot.wav"
   }
 }

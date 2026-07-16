@@ -7,6 +7,13 @@
 
 namespace xpad::config {
 
+struct MidiLearnBinding {
+    std::string controlId{};   // e.g. roll_0, master, pitch
+    std::string messageType{}; // note|cc
+    int number{-1};
+    int channel{-1};
+};
+
 struct XPadConfig {
     // Audio
     std::string audioDevice{};
@@ -36,6 +43,9 @@ struct XPadConfig {
 
     // Legacy per-pad quantization (kept for backward compatibility)
     std::array<int, 8> padQuantization{2,2,2,2,2,2,2,2};
+
+    // MIDI learn assignments
+    std::vector<MidiLearnBinding> midiLearnBindings{};
 
     bool save(const std::string& filePath) const;
     bool load(const std::string& filePath);

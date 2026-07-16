@@ -32,6 +32,29 @@ xpad::audio::QuantizeDivision toQuantDivisionFromRulerIndex(int idx) {
     }
 }
 
+bool messageMatchesBinding(const xpad::midi::MidiMessage& msg,
+                          const xpad::config::MidiLearnBinding& b) {
+    if (b.number < 0) return false;
+    if (b.channel >= 0 && static_cast<int>(msg.channel()) != b.channel) return false;
+
+    if (b.messageType == "note") {
+        return msg.type() == 0x90 && static_cast<int>(msg.data1) == b.number && msg.data2 > 0;
+    }
+    if (b.messageType == "cc") {
+        return msg.type() == 0xB0 && static_cast<int>(msg.data1) == b.number;
+    }
+    return false;
+}
+
+std::string bindingToLabel(const xpad::config::MidiLearnBinding& b) {
+    if (b.number < 0) return "-";
+    const std::string type = (b.messageType == "cc") ? "CC" : "NOTE";
+    if (b.channel >= 0) {
+        return type + " " + std::to_string(b.number) + " ch" + std::to_string(b.channel + 1);
+    }
+    return type + " " + std::to_string(b.number);
+}
+
 } // namespace
 
 App::App() : App(Config{}) {}
@@ -100,14 +123,55 @@ void App::initSubsystems() {
     });
 
     const auto midiPorts = midiManager_->listPorts();
-    if (!xCfg_.midiPortName.empty()) {
-        midiManager_->openPortByName(xCfg_.midiPortName);
-    } else if (!midiPorts.empty()) {
-        midiManager_->openPort(0);
-        xCfg_.midiPortName = midiPorts[0];
-    } else {
+    if (midiPorts.empty()) {
         core::Logger::warn("MIDI: nenhuma porta encontrada");
+    } else {
+        std::string portsList;
+        for (std::size_t i = 0; i < midiPorts.size(); ++i) {
+            portsList += "[" + std::to_string(i) + "] " + midiPorts[i];
+            if (i + 1 < midiPorts.size()) portsList += " | ";
+        }
+        core::Logger::info("MIDI ports detectadas: " + portsList);
+
+        auto isVirtualPort = [](const std::string& name) {
+            return name.find("Midi Through") != std::string::npos ||
+                   name.find("LoopBe") != std::string::npos ||
+                   name.find("Virtual") != std::string::npos;
+        };
+
+        bool opened = false;
+
+        // 1) Try configured port first, unless it's the known virtual fallback.
+        if (!xCfg_.midiPortName.empty() && !isVirtualPort(xCfg_.midiPortName)) {
+            opened = midiManager_->openPortByName(xCfg_.midiPortName);
+        }
+
+        // 2) Prefer a real hardware port.
+        if (!opened) {
+            for (std::size_t i = 0; i < midiPorts.size(); ++i) {
+                if (isVirtualPort(midiPorts[i])) continue;
+                if (midiManager_->openPort(static_cast<std::uint32_t>(i))) {
+                    xCfg_.midiPortName = midiPorts[i];
+                    opened = true;
+                    break;
+                }
+            }
+        }
+
+        // 3) Last resort: open first available (can be virtual).
+        if (!opened && midiManager_->openPort(0)) {
+            xCfg_.midiPortName = midiPorts[0];
+            opened = true;
+        }
+
+        if (!opened) {
+            core::Logger::warn("MIDI: falha ao abrir qualquer porta");
+        }
     }
+
+    midiConnectedPortLabel_ = midiManager_->isOpen() ? midiManager_->openPortName() : "(none)";
+
+    rebuildMidiBindingCache();
 }
 
 void App::shutdownSubsystems() {
@@ -197,7 +261,137 @@ void App::loadSelectedSampleIntoPad0() {
     core::Logger::info("Sample selecionado: " + meta.name);
 }
 
+void App::rebuildMidiBindingCache() {
+    midiBindingByControl_.clear();
+    midiBindingLabelByControl_.clear();
+    for (const auto& b : xCfg_.midiLearnBindings) {
+        if (b.controlId.empty()) continue;
+        midiBindingByControl_[b.controlId] = b;
+        midiBindingLabelByControl_[b.controlId] = bindingToLabel(b);
+    }
+}
+
+void App::setMidiLearnMode(bool enabled) {
+    midiLearnMode_ = enabled;
+    if (!enabled) {
+        pendingMidiLearnControl_.clear();
+    }
+}
+
+void App::beginMidiLearn(const std::string& controlId) {
+    if (!midiLearnMode_) return;
+    pendingMidiLearnControl_ = controlId;
+    core::Logger::info("MIDI Learn: aguardando entrada para '" + controlId + "'");
+}
+
+void App::applyMidiControl(const std::string& controlId, const xpad::midi::MidiMessage& msg) {
+    if (controlId == "trigger") {
+        const float vol = msg.isCC() ? (static_cast<float>(msg.data2) / 127.0f)
+                                     : std::max(0.05f, static_cast<float>(msg.data2) / 127.0f);
+        onTrigger(std::max(0.05f, vol));
+        return;
+    }
+
+    if (controlId.rfind("roll_", 0) == 0) {
+        const int idx = std::stoi(controlId.substr(5));
+        if (idx == activeRollButton_) selectRoll(-1, 1.0f);
+        else selectRoll(idx, 1.0f);
+        return;
+    }
+
+    if (controlId == "master" && msg.isCC()) {
+        const float v = static_cast<float>(msg.data2) / 127.0f;
+        xCfg_.masterVolume = v;
+        if (scheduler_) scheduler_->setMasterVolume(v);
+        return;
+    }
+
+    if (controlId == "pitch" && msg.isCC()) {
+        const float t = (static_cast<float>(msg.data2) / 127.0f) * 24.0f - 12.0f;
+        xCfg_.pitchSemitones = t;
+        if (scheduler_) scheduler_->setPitchSemitones(t);
+        return;
+    }
+
+    if (controlId == "filter" && msg.isCC()) {
+        const float v = (static_cast<float>(msg.data2) / 127.0f) * 2.0f - 1.0f;
+        xCfg_.filterAmount = v;
+        if (scheduler_) scheduler_->setFilterAmount(v);
+        return;
+    }
+
+    if (controlId == "sample_next") {
+        if (availableSamplePaths_.empty()) return;
+        selectedSampleIndex_ = (selectedSampleIndex_ + 1) % static_cast<int>(availableSamplePaths_.size());
+        loadSelectedSampleIntoPad0();
+        return;
+    }
+
+    if (controlId == "sample_prev") {
+        if (availableSamplePaths_.empty()) return;
+        selectedSampleIndex_ = (selectedSampleIndex_ - 1 + static_cast<int>(availableSamplePaths_.size()))
+                             % static_cast<int>(availableSamplePaths_.size());
+        loadSelectedSampleIntoPad0();
+        return;
+    }
+}
+
 void App::onMidiMessage(const xpad::midi::MidiMessage& msg) {
+    {
+        std::ostringstream midi;
+        if (msg.isCC()) {
+            midi << "CC " << static_cast<int>(msg.data1)
+                 << " v=" << static_cast<int>(msg.data2)
+                 << " ch" << (static_cast<int>(msg.channel()) + 1);
+        } else if (msg.isNoteOn()) {
+            midi << "NoteOn " << static_cast<int>(msg.data1)
+                 << " v=" << static_cast<int>(msg.data2)
+                 << " ch" << (static_cast<int>(msg.channel()) + 1);
+        } else if (msg.isNoteOff()) {
+            midi << "NoteOff " << static_cast<int>(msg.data1)
+                 << " ch" << (static_cast<int>(msg.channel()) + 1);
+        } else {
+            midi << "MIDI status=0x" << std::hex << static_cast<int>(msg.status)
+                 << std::dec << " d1=" << static_cast<int>(msg.data1)
+                 << " d2=" << static_cast<int>(msg.data2);
+        }
+        midiLastMessageLabel_ = midi.str();
+    }
+
+    // Learn mode: click target in UI, then move/press hardware control.
+    if (midiLearnMode_ && !pendingMidiLearnControl_.empty() && (msg.isNoteOn() || msg.isCC())) {
+        xpad::config::MidiLearnBinding b;
+        b.controlId = pendingMidiLearnControl_;
+        b.messageType = msg.isCC() ? "cc" : "note";
+        b.number = static_cast<int>(msg.data1);
+        b.channel = static_cast<int>(msg.channel());
+
+        bool replaced = false;
+        for (auto& existing : xCfg_.midiLearnBindings) {
+            if (existing.controlId == b.controlId) {
+                existing = b;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) {
+            xCfg_.midiLearnBindings.push_back(b);
+        }
+
+        rebuildMidiBindingCache();
+        core::Logger::info("MIDI Learn: mapeado '" + b.controlId + "' -> " + bindingToLabel(b));
+        pendingMidiLearnControl_.clear();
+        return;
+    }
+
+    // Runtime mapping dispatch.
+    for (const auto& [controlId, binding] : midiBindingByControl_) {
+        if (!messageMatchesBinding(msg, binding)) continue;
+        applyMidiControl(controlId, msg);
+        return;
+    }
+
+    // Fallback legacy: any NoteOn triggers current active roll.
     if (msg.isNoteOn()) {
         const float vol = std::max(0.05f, static_cast<float>(msg.data2) / 127.0f);
         onTrigger(vol);
@@ -286,6 +480,15 @@ void App::runGui() {
     handlers.onRulerChange = [this](int rulerIndex) {
         selectRoll(rulerIndex, 1.0f);
     };
+    handlers.onSetMidiLearnMode = [this](bool enabled) {
+        setMidiLearnMode(enabled);
+    };
+    handlers.onBeginMidiLearn = [this](const std::string& control) {
+        beginMidiLearn(control);
+    };
+    handlers.onGetMidiStatus = [this]() -> std::pair<std::string, std::string> {
+        return {midiConnectedPortLabel_, midiLastMessageLabel_};
+    };
     handlers.onSaveConfig = [this]() {
         xCfg_.save(xpad::config::XPadConfig::defaultPath());
     };
@@ -306,7 +509,10 @@ void App::runGui() {
                  audioDevices,
                  availableSampleNames_,
                  selectedSampleIndex_,
-                 activeRollButton_);
+                 activeRollButton_,
+                 midiLearnMode_,
+                 pendingMidiLearnControl_,
+                 midiBindingLabelByControl_);
 }
 
 } // namespace xpad::app

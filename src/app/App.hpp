@@ -8,6 +8,7 @@
 #include "samples/SampleBank.hpp"
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace xpad::app {
@@ -42,6 +43,10 @@ private:
     void onMidiMessage(const xpad::midi::MidiMessage& msg);
     void onTrigger(float volume);
     void selectRoll(int rollButtonIndex, float volume);
+    void beginMidiLearn(const std::string& controlId);
+    void setMidiLearnMode(bool enabled);
+    void applyMidiControl(const std::string& controlId, const xpad::midi::MidiMessage& msg);
+    void rebuildMidiBindingCache();
 
     Config cfg_;
     xpad::config::XPadConfig xCfg_;
@@ -57,6 +62,12 @@ private:
     std::vector<std::string> availableSampleNames_;
     int selectedSampleIndex_{0};
     int activeRollButton_{-1}; // 0..4 => 1/8,1/4,1/2,1/1,2/1
+    bool midiLearnMode_{false};
+    std::string pendingMidiLearnControl_{};
+    std::unordered_map<std::string, xpad::config::MidiLearnBinding> midiBindingByControl_;
+    std::unordered_map<std::string, std::string> midiBindingLabelByControl_;
+    std::string midiConnectedPortLabel_{"(none)"};
+    std::string midiLastMessageLabel_{"-"};
 
     bool tempoChanged_{false};
 };
