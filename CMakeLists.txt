@@ -88,12 +88,13 @@ target_link_libraries(xpad_core PUBLIC
     ${RUBBERBAND_LIBRARIES}
     ${GLFW3_LIBRARIES}
     OpenGL::GL
-    dl
-    m
 )
 
-if(UNIX AND NOT APPLE)
-    target_link_libraries(xpad_core PUBLIC asound)
+if(UNIX)
+    target_link_libraries(xpad_core PUBLIC dl m)
+    if(NOT APPLE)
+        target_link_libraries(xpad_core PUBLIC asound)
+    endif()
 endif()
 
 target_compile_features(xpad_core PUBLIC cxx_std_20)
