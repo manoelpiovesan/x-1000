@@ -1,0 +1,73 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-glfw
+            mingw-w64-ucrt-x86_64-rtmidi
+            mingw-w64-ucrt-x86_64-rubberband
+
+      - name: Configure
+        run: |
+          cmake --preset ableton-link
+
+      - name: Build
+        run: |
+          cmake --build --preset ableton-link
+
+      - name: Test
+        run: |
+          ctest --preset ableton-link
+
+      - name: Package EXE and runtime DLLs
+        run: |
+          set -e
+          rm -rf dist
+          mkdir -p dist
+
+          cp build/xpad_link.exe dist/
+          cp build/xpad_link_tests.exe dist/
+
+          # Try to copy dependent runtime DLLs from UCRT64.
+          # If ntldd is unavailable for any reason, keep at least the executables.
+          if command -v ntldd >/dev/null 2>&1; then
+            ntldd -R dist/xpad_link.exe | awk '/ucrt64\\/bin\\/.*\\.dll/ {print $3}' | sort -u > dlls.txt || true
+            if [ -f dlls.txt ]; then
+              while IFS= read -r dll; do
+                [ -f "$dll" ] && cp "$dll" dist/ || true
+              done < dlls.txt
+            fi
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xpad-link-windows
+          path: dist/
