@@ -28,6 +28,22 @@ jobs:
           # Ensure nested SDK submodules (asio-standalone, etc.) are present.
           git -C ableton-link submodule update --init --recursive
 
+      - name: Ensure third_party dependencies exist
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p third_party
+
+          if [ ! -f "third_party/imgui/imgui.cpp" ]; then
+            rm -rf third_party/imgui
+            git clone --depth 1 https://github.com/ocornut/imgui.git third_party/imgui
+          fi
+
+          if [ ! -f "third_party/miniaudio.h" ]; then
+            curl -L --fail https://raw.githubusercontent.com/mackron/miniaudio/master/miniaudio.h -o third_party/miniaudio.h
+          fi
+
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -84,6 +100,7 @@ jobs:
         with:
           name: xpad-link-windows
           path: dist/
+
 
 
 
