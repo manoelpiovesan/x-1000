@@ -66,9 +66,9 @@
     "port": "Midi Through:Midi Through Port-0 14:0"
   },
   "padQuantization": [
+    0,
     2,
-    2,
-    2,
+    3,
     2,
     2,
     2,
@@ -76,6 +76,8 @@
     2
   ],
   "ui": {
-    "masterVolume": 1.0
+    "globalQuantization": 1,
+    "masterVolume": 0.4819999933242798,
+    "selectedSamplePath": "samples/snare.mp3"
   }
 }

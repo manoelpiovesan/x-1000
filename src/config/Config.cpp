@@ -32,8 +32,11 @@ bool XPadConfig::save(const std::string& filePath) const {
         j["link"]["tempo"]   = initialTempoBpm;
         j["link"]["quantum"] = quantum;
 
-        j["ui"]["masterVolume"]  = masterVolume;
-        j["padQuantization"]     = padQuantization;
+        j["ui"]["masterVolume"]      = masterVolume;
+        j["ui"]["selectedSamplePath"] = selectedSamplePath;
+        j["ui"]["globalQuantization"] = globalQuantization;
+
+        j["padQuantization"] = padQuantization;
 
         std::ofstream out(filePath);
         out << j.dump(2);
@@ -78,7 +81,10 @@ bool XPadConfig::load(const std::string& filePath) {
         initialTempoBpm = j.value("/link/tempo"_json_pointer, 126.0);
         quantum         = j.value("/link/quantum"_json_pointer, 4.0);
 
-        masterVolume = j.value("/ui/masterVolume"_json_pointer, 1.0f);
+        masterVolume      = j.value("/ui/masterVolume"_json_pointer, 1.0f);
+        selectedSamplePath= j.value("/ui/selectedSamplePath"_json_pointer, std::string{});
+        globalQuantization= j.value("/ui/globalQuantization"_json_pointer, 3);
+
         if (j.contains("padQuantization")) {
             auto& pq = j["padQuantization"];
             for (std::size_t i = 0; i < padQuantization.size() && i < pq.size(); ++i) {
@@ -99,4 +105,3 @@ std::string XPadConfig::defaultPath() {
 }
 
 } // namespace xpad::config
-

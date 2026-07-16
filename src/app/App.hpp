@@ -8,6 +8,7 @@
 #include "samples/SampleBank.hpp"
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace xpad::app {
 
@@ -34,12 +35,13 @@ private:
     void initSubsystems();
     void shutdownSubsystems();
     void loadBank();
+    void loadSelectedSampleIntoPad0();
     void runHeadless();
     void runGui();
 
     void onMidiMessage(const xpad::midi::MidiMessage& msg);
-    void onPadPress(int padIndex, float volume);
-    void onPadRelease(int padIndex);
+    void onTrigger(float volume);
+    void selectRoll(int rollButtonIndex, float volume);
 
     Config cfg_;
     xpad::config::XPadConfig xCfg_;
@@ -51,13 +53,12 @@ private:
     std::shared_ptr<xpad::midi::MidiManager>      midiManager_;
     std::unique_ptr<xpad::gui::MainWindow>        window_;
 
+    std::vector<std::string> availableSamplePaths_;
+    std::vector<std::string> availableSampleNames_;
+    int selectedSampleIndex_{0};
+    int activeRollButton_{-1}; // 0..4 => 1/8,1/4,1/2,1/1,2/1
+
     bool tempoChanged_{false};
 };
 
 } // namespace xpad::app
-
-
-
-
-
-

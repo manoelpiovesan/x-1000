@@ -6,16 +6,19 @@
 
 namespace xpad::audio {
 
+// RMX-like ruler in beat fractions:
+// 2/1=2 beats, 1/1=1 beat, 1/2=0.5, 1/4=0.25, 1/8=0.125
 double divisionToBeats(QuantizeDivision div) noexcept {
     switch (div) {
-        case QuantizeDivision::Whole:        return 4.0;
-        case QuantizeDivision::Half:         return 2.0;
-        case QuantizeDivision::Quarter:      return 1.0;
-        case QuantizeDivision::Eighth:       return 0.5;
-        case QuantizeDivision::Sixteenth:    return 0.25;
-        case QuantizeDivision::ThirtySecond: return 0.125;
+        case QuantizeDivision::DoubleWhole:  return 2.0;
+        case QuantizeDivision::Whole:        return 1.0;
+        case QuantizeDivision::Half:         return 0.5;
+        case QuantizeDivision::Quarter:      return 0.25;
+        case QuantizeDivision::Eighth:       return 0.125;
+        case QuantizeDivision::Sixteenth:    return 0.0625;
+        case QuantizeDivision::ThirtySecond: return 0.03125;
     }
-    return 1.0;
+    return 0.25;
 }
 
 double quantizeNextBeat(double currentBeat, QuantizeDivision div) noexcept {
@@ -58,7 +61,6 @@ void AudioScheduler::schedulePad(int padIndex,
 
     {
         std::scoped_lock lock(scheduleMutex_);
-        // Remove any existing pending event for this pad
         pendingEvents_.erase(
             std::remove_if(pendingEvents_.begin(), pendingEvents_.end(),
                            [padIndex](const ScheduledEvent& e){ return e.padIndex == padIndex; }),
@@ -69,13 +71,17 @@ void AudioScheduler::schedulePad(int padIndex,
             .triggerAtBeat = triggerAtBeat,
             .loop = isLoop,
             .volume = volume,
+            .quantization = quantization,
         });
     }
 
     padScheduled_[static_cast<std::size_t>(padIndex)].store(true);
 }
 
-void AudioScheduler::releasePad(int padIndex) {
+void AudioScheduler::startRoll(int padIndex,
+                               double currentBeat,
+                               QuantizeDivision rollDivision,
+                               float volume) {
     if (padIndex < 0 || padIndex >= xpad::samples::kPadCount) return;
 
     std::shared_ptr<xpad::samples::Sample> sample;
@@ -83,20 +89,56 @@ void AudioScheduler::releasePad(int padIndex) {
         std::scoped_lock lock(bankMutex_);
         if (bank_) sample = bank_->pad(padIndex);
     }
-    if (!sample) return;
+    if (!sample || !sample->loaded()) return;
 
-    if (sample->meta.mode == xpad::samples::PadMode::Hold ||
-        sample->meta.mode == xpad::samples::PadMode::Loop) {
-        stopVoice(padIndex);
+    const double triggerAtBeat = quantizeNextBeat(currentBeat, rollDivision);
 
+    {
         std::scoped_lock lock(scheduleMutex_);
         pendingEvents_.erase(
             std::remove_if(pendingEvents_.begin(), pendingEvents_.end(),
                            [padIndex](const ScheduledEvent& e){ return e.padIndex == padIndex; }),
             pendingEvents_.end());
 
-        padScheduled_[static_cast<std::size_t>(padIndex)].store(false);
+        pendingEvents_.push_back(ScheduledEvent{
+            .padIndex = padIndex,
+            .triggerAtBeat = triggerAtBeat,
+            .loop = true,
+            .volume = volume,
+            .quantization = rollDivision,
+        });
     }
+
+    padScheduled_[static_cast<std::size_t>(padIndex)].store(true);
+}
+
+void AudioScheduler::stopRoll(int padIndex) {
+    if (padIndex < 0 || padIndex >= xpad::samples::kPadCount) return;
+
+    {
+        std::scoped_lock lock(scheduleMutex_);
+        pendingEvents_.erase(
+            std::remove_if(pendingEvents_.begin(), pendingEvents_.end(),
+                           [padIndex](const ScheduledEvent& e){ return e.padIndex == padIndex; }),
+            pendingEvents_.end());
+    }
+
+    stopVoice(padIndex);
+    padScheduled_[static_cast<std::size_t>(padIndex)].store(false);
+}
+
+void AudioScheduler::releasePad(int padIndex) {
+    stopRoll(padIndex);
+}
+
+std::uint64_t AudioScheduler::loopSliceFrames(const Voice& voice, double tempoBpm) const {
+    if (!voice.sample || !voice.sample->loaded()) return 0;
+    const double bpm = tempoBpm > 0.0 ? tempoBpm : 120.0;
+    const double secondsPerBeat = 60.0 / bpm;
+    const double loopSeconds = divisionToBeats(voice.loopDivision) * secondsPerBeat;
+    const double framesD = loopSeconds * static_cast<double>(voice.sample->sampleRate);
+    const std::uint64_t frames = static_cast<std::uint64_t>(std::max(1.0, std::floor(framesD)));
+    return std::min<std::uint64_t>(frames, voice.sample->frameCount);
 }
 
 void AudioScheduler::processAudio(float* outputBuffer,
@@ -108,13 +150,16 @@ void AudioScheduler::processAudio(float* outputBuffer,
 
     if (frameCount == 0 || sampleRate == 0) return;
 
-    // -- Fire pending events that have reached their trigger beat --
     {
         std::scoped_lock lock(scheduleMutex_);
         auto it = pendingEvents_.begin();
         while (it != pendingEvents_.end()) {
             if (currentBeat >= it->triggerAtBeat) {
-                activateVoice(it->padIndex, it->triggerAtBeat, it->volume, it->loop);
+                activateVoice(it->padIndex,
+                              it->triggerAtBeat,
+                              it->volume,
+                              it->loop,
+                              it->quantization);
                 padScheduled_[static_cast<std::size_t>(it->padIndex)].store(false);
                 it = pendingEvents_.erase(it);
             } else {
@@ -123,46 +168,42 @@ void AudioScheduler::processAudio(float* outputBuffer,
         }
     }
 
-    // -- Mix all active voices into the output buffer --
     for (auto& voice : voices_) {
         if (!voice.active || !voice.sample || !voice.sample->loaded()) continue;
 
         const auto& smp = *voice.sample;
-
-        // Compute stretch rate based on BPM
-        double stretchRate = 1.0;
-        if (smp.meta.referenceBpm > 0.0 && tempoBpm > 0.0) {
-            stretchRate = tempoBpm / smp.meta.referenceBpm;
-        }
-
         const float vol = voice.volume * static_cast<float>(smp.meta.volume);
 
+        std::uint64_t loopFrames = 0;
+        if (voice.loop && voice.useLoopSlice) {
+            loopFrames = loopSliceFrames(voice, tempoBpm);
+            if (loopFrames == 0) loopFrames = smp.frameCount;
+        }
+
         for (std::uint32_t f = 0; f < frameCount; ++f) {
-            if (voice.readPosition >= smp.frameCount) {
+            const std::uint64_t endFrame = (voice.loop && voice.useLoopSlice) ? loopFrames : smp.frameCount;
+            if (voice.readPosition >= endFrame) {
                 if (voice.loop) {
                     voice.readPosition = 0;
                 } else {
                     voice.active = false;
-                    padActive_[static_cast<std::size_t>(voice.padIndex)].store(false);
+                    if (voice.padIndex >= 0 && voice.padIndex < xpad::samples::kPadCount) {
+                        padActive_[static_cast<std::size_t>(voice.padIndex)].store(false);
+                    }
                     break;
                 }
             }
 
-            // Simple rate-based time stretch: nearest-neighbour sample position
             const std::uint64_t sourceFrame = voice.readPosition;
             const float left  = smp.data[sourceFrame * 2 + 0] * vol;
             const float right = smp.data[sourceFrame * 2 + 1] * vol;
 
             outputBuffer[f * 2 + 0] += left;
             outputBuffer[f * 2 + 1] += right;
-
-            // Advance by stretchRate (rate < 1 → slows down, rate > 1 → speeds up)
-            const double nextPos = static_cast<double>(voice.readPosition) + stretchRate;
-            voice.readPosition = static_cast<std::uint64_t>(nextPos);
+            voice.readPosition += 1;
         }
     }
 
-    // Soft clip to prevent distortion
     for (std::uint32_t i = 0; i < frameCount * 2; ++i) {
         const float s = outputBuffer[i];
         outputBuffer[i] = s > 1.0f ? 1.0f : (s < -1.0f ? -1.0f : s);
@@ -181,7 +222,11 @@ bool AudioScheduler::isPadScheduled(int padIndex) const noexcept {
     return padScheduled_[static_cast<std::size_t>(padIndex)].load();
 }
 
-void AudioScheduler::activateVoice(int padIndex, double triggerBeat, float volume, bool loop) {
+void AudioScheduler::activateVoice(int padIndex,
+                                   double triggerBeat,
+                                   float volume,
+                                   bool loop,
+                                   QuantizeDivision quantization) {
     std::shared_ptr<xpad::samples::Sample> sample;
     {
         std::scoped_lock lock(bankMutex_);
@@ -189,7 +234,6 @@ void AudioScheduler::activateVoice(int padIndex, double triggerBeat, float volum
     }
     if (!sample || !sample->loaded()) return;
 
-    // For retrigger: reuse existing voice for this pad
     Voice* target = nullptr;
     for (auto& v : voices_) {
         if (v.padIndex == padIndex) {
@@ -197,7 +241,6 @@ void AudioScheduler::activateVoice(int padIndex, double triggerBeat, float volum
             break;
         }
     }
-    // Otherwise find first free voice
     if (!target) {
         for (auto& v : voices_) {
             if (!v.active) {
@@ -206,7 +249,7 @@ void AudioScheduler::activateVoice(int padIndex, double triggerBeat, float volum
             }
         }
     }
-    if (!target) return; // Voice steal not implemented yet
+    if (!target) return;
 
     target->sample = sample;
     target->readPosition = 0;
@@ -215,15 +258,21 @@ void AudioScheduler::activateVoice(int padIndex, double triggerBeat, float volum
     target->loop = loop;
     target->scheduledAtBeat = triggerBeat;
     target->padIndex = padIndex;
+    target->useLoopSlice = loop;
+    target->loopDivision = quantization;
 
-    padActive_[static_cast<std::size_t>(padIndex)].store(true);
+    if (padIndex >= 0 && padIndex < xpad::samples::kPadCount) {
+        padActive_[static_cast<std::size_t>(padIndex)].store(true);
+    }
 }
 
 void AudioScheduler::stopVoice(int padIndex) {
     for (auto& v : voices_) {
         if (v.padIndex == padIndex && v.active) {
             v.active = false;
-            padActive_[static_cast<std::size_t>(padIndex)].store(false);
+            if (padIndex >= 0 && padIndex < xpad::samples::kPadCount) {
+                padActive_[static_cast<std::size_t>(padIndex)].store(false);
+            }
         }
     }
 }

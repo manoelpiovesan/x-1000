@@ -1,6 +1,7 @@
 #pragma once
 #include "audio/AudioScheduler.hpp"
 #include "midi/MidiManager.hpp"
+#include <array>
 #include <string>
 #include <vector>
 
@@ -27,8 +28,12 @@ struct XPadConfig {
     // UI
     float masterVolume{1.0f};
 
-    // Per-pad quantization override (QuantizeDivision index)
-    std::array<int, 8> padQuantization{2,2,2,2,2,2,2,2}; // all 1/4 by default
+    // RMX-style global controls
+    std::string selectedSamplePath{};
+    int globalQuantization{3}; // 0=2/1, 1=1/1, 2=1/2, 3=1/4, 4=1/8
+
+    // Legacy per-pad quantization (kept for backward compatibility)
+    std::array<int, 8> padQuantization{2,2,2,2,2,2,2,2};
 
     bool save(const std::string& filePath) const;
     bool load(const std::string& filePath);
@@ -37,4 +42,3 @@ struct XPadConfig {
 };
 
 } // namespace xpad::config
-

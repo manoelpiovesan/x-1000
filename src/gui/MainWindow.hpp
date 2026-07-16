@@ -12,12 +12,10 @@
 namespace xpad::gui {
 
 struct GuiHandlers {
-    std::function<void(int padIndex, float volume)> onPadPress;
-    std::function<void(int padIndex)>               onPadRelease;
+    std::function<void()>                           onTrigger;
     std::function<void(float volume)>               onMasterVolumeChange;
-    std::function<void(int padIndex, int quantDiv)> onPadQuantChange;
-    std::function<void(const std::string& port)>    onMidiPortSelect;
-    std::function<void(const std::string& device)>  onAudioDeviceSelect;
+    std::function<void(int sampleIndex)>            onSampleSelectionChange;
+    std::function<void(int rulerIndex)>             onRulerChange;
     std::function<void()>                           onSaveConfig;
 };
 
@@ -32,13 +30,15 @@ public:
     bool init(int width, int height, const char* title);
     void shutdown();
 
-    // Run the render loop; returns when user closes the window.
     void run(
         const xpad::link::LinkManager& linkManager,
         const xpad::audio::AudioScheduler& scheduler,
         xpad::config::XPadConfig& cfg,
         const std::vector<std::string>& midiPorts,
-        const std::vector<std::string>& audioDevices
+        const std::vector<std::string>& audioDevices,
+        const std::vector<std::string>& sampleNames,
+        int& selectedSampleIndex,
+        int& activeRollButton
     );
 
     [[nodiscard]] bool isOpen() const noexcept;
@@ -50,4 +50,3 @@ private:
 };
 
 } // namespace xpad::gui
-

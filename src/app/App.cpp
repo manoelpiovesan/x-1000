@@ -2,13 +2,37 @@
 #include "core/Logger.hpp"
 #include "samples/SampleLoader.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <iomanip>
+#include <numeric>
 #include <sstream>
 #include <thread>
-#include <algorithm>
 
 namespace xpad::app {
+
+namespace {
+
+bool isSupportedAudioFile(const std::filesystem::path& p) {
+    if (!p.has_extension()) return false;
+    std::string ext = p.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+    return ext == ".wav" || ext == ".flac" || ext == ".mp3" || ext == ".ogg";
+}
+
+xpad::audio::QuantizeDivision toQuantDivisionFromRulerIndex(int idx) {
+    switch (idx) {
+        case 0: return xpad::audio::QuantizeDivision::Eighth;
+        case 1: return xpad::audio::QuantizeDivision::Quarter;
+        case 2: return xpad::audio::QuantizeDivision::Half;
+        case 3: return xpad::audio::QuantizeDivision::Whole;
+        case 4: return xpad::audio::QuantizeDivision::DoubleWhole;
+        default: return xpad::audio::QuantizeDivision::Quarter;
+    }
+}
+
+} // namespace
 
 App::App() : App(Config{}) {}
 
@@ -40,7 +64,6 @@ int App::run() {
 void App::initSubsystems() {
     core::Logger::info("XPad Link — inicializando...");
 
-    // 1. Link
     linkManager_ = std::make_shared<xpad::link::LinkManager>(
         xpad::link::LinkManager::Config{
             .initialTempoBpm   = xCfg_.initialTempoBpm,
@@ -50,15 +73,12 @@ void App::initSubsystems() {
     linkManager_->start();
     core::Logger::info(std::string("Link: ") + linkManager_->modeName());
 
-    // 2. Sample Bank
     bank_ = std::make_shared<xpad::samples::SampleBank>();
     bank_->name = xCfg_.activeBankName;
     loadBank();
 
-    // 3. Scheduler
     scheduler_ = std::make_shared<xpad::audio::AudioScheduler>(bank_);
 
-    // 4. Audio engine
     audioEngine_ = std::make_shared<xpad::audio::AudioEngine>(
         xpad::audio::AudioConfig{
             .sampleRate       = xCfg_.sampleRate,
@@ -71,15 +91,10 @@ void App::initSubsystems() {
     });
     audioEngine_->start();
 
-    // 5. MIDI
     midiManager_ = std::make_shared<xpad::midi::MidiManager>();
     midiManager_->setCallback([this](const xpad::midi::MidiMessage& msg) {
         onMidiMessage(msg);
     });
-
-    if (xCfg_.padMappings.empty()) {
-        xCfg_.padMappings = xpad::midi::defaultLpd8Mapping();
-    }
 
     const auto midiPorts = midiManager_->listPorts();
     if (!xCfg_.midiPortName.empty()) {
@@ -93,7 +108,6 @@ void App::initSubsystems() {
 }
 
 void App::shutdownSubsystems() {
-    // Auto-save config on exit
     xCfg_.save(xpad::config::XPadConfig::defaultPath());
 
     if (window_) { window_->shutdown(); window_.reset(); }
@@ -103,57 +117,115 @@ void App::shutdownSubsystems() {
 }
 
 void App::loadBank() {
+    availableSamplePaths_.clear();
+    availableSampleNames_.clear();
+
     if (!std::filesystem::exists(xCfg_.samplesDirectory)) {
         core::Logger::warn("SampleBank: diretorio nao encontrado: " + xCfg_.samplesDirectory);
         std::filesystem::create_directories(xCfg_.samplesDirectory);
         return;
     }
 
-    const std::array<std::string, 8> defaultNames{
-        "pad1","pad2","pad3","pad4","pad5","pad6","pad7","pad8"
-    };
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(xCfg_.samplesDirectory)) {
+        if (!entry.is_regular_file()) continue;
+        const auto path = entry.path();
+        if (!isSupportedAudioFile(path)) continue;
 
-    int loaded = 0;
-    for (int i = 0; i < xpad::samples::kPadCount; ++i) {
-        for (const auto& ext : {".wav",".flac",".mp3",".ogg"}) {
-            const std::string path = xCfg_.samplesDirectory + "/" + defaultNames[i] + ext;
-            if (std::filesystem::exists(path)) {
-                xpad::samples::SampleMetadata meta;
-                meta.name       = defaultNames[i];
-                meta.filePath   = path;
-                meta.mode       = xpad::samples::PadMode::OneShot;
+        availableSamplePaths_.push_back(path.string());
+        availableSampleNames_.push_back(path.filename().string());
+    }
 
-                auto sample = xpad::samples::loadSample(path, meta, xCfg_.sampleRate);
-                if (sample) { bank_->setPad(i, sample); ++loaded; }
+    std::vector<std::size_t> order(availableSamplePaths_.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::sort(order.begin(), order.end(), [this](std::size_t a, std::size_t b) {
+        return availableSampleNames_[a] < availableSampleNames_[b];
+    });
+
+    std::vector<std::string> sortedPaths;
+    std::vector<std::string> sortedNames;
+    sortedPaths.reserve(order.size());
+    sortedNames.reserve(order.size());
+    for (std::size_t idx : order) {
+        sortedPaths.push_back(availableSamplePaths_[idx]);
+        sortedNames.push_back(availableSampleNames_[idx]);
+    }
+    availableSamplePaths_ = std::move(sortedPaths);
+    availableSampleNames_ = std::move(sortedNames);
+
+    if (availableSamplePaths_.empty()) {
+        core::Logger::warn("SampleBank: nenhum sample encontrado em " + xCfg_.samplesDirectory);
+        return;
+    }
+
+    selectedSampleIndex_ = 0;
+    if (!xCfg_.selectedSamplePath.empty()) {
+        for (std::size_t i = 0; i < availableSamplePaths_.size(); ++i) {
+            if (availableSamplePaths_[i] == xCfg_.selectedSamplePath) {
+                selectedSampleIndex_ = static_cast<int>(i);
                 break;
             }
         }
     }
-    core::Logger::info("SampleBank: " + std::to_string(loaded) + " sample(s) carregado(s)");
+
+    loadSelectedSampleIntoPad0();
+    core::Logger::info("SampleBank: " + std::to_string(availableSamplePaths_.size()) + " sample(s) disponivel(is)");
+}
+
+void App::loadSelectedSampleIntoPad0() {
+    if (selectedSampleIndex_ < 0 || selectedSampleIndex_ >= static_cast<int>(availableSamplePaths_.size())) {
+        return;
+    }
+
+    const std::string& path = availableSamplePaths_[static_cast<std::size_t>(selectedSampleIndex_)];
+    xpad::samples::SampleMetadata meta;
+    meta.name       = availableSampleNames_[static_cast<std::size_t>(selectedSampleIndex_)];
+    meta.filePath   = path;
+    meta.mode       = xpad::samples::PadMode::OneShot;
+    meta.referenceBpm = 0.0;
+
+    auto sample = xpad::samples::loadSample(path, meta, xCfg_.sampleRate);
+    if (!sample) {
+        core::Logger::error("Falha ao carregar sample selecionado: " + path);
+        return;
+    }
+
+    bank_->setPad(0, sample);
+    xCfg_.selectedSamplePath = path;
+    core::Logger::info("Sample selecionado: " + meta.name);
 }
 
 void App::onMidiMessage(const xpad::midi::MidiMessage& msg) {
-    for (const auto& mapping : xCfg_.padMappings) {
-        if (msg.data1 != mapping.noteNumber) continue;
-        if (msg.isNoteOn()) {
-            const float vol = static_cast<float>(msg.data2) / 127.0f * mapping.volume;
-            onPadPress(mapping.padIndex, vol);
-        } else if (msg.isNoteOff()) {
-            onPadRelease(mapping.padIndex);
-        }
+    if (msg.isNoteOn()) {
+        const float vol = std::max(0.05f, static_cast<float>(msg.data2) / 127.0f);
+        onTrigger(vol);
     }
 }
 
-void App::onPadPress(int padIndex, float volume) {
+void App::onTrigger(float volume) {
     if (!scheduler_) return;
-    const auto snap = linkManager_->snapshot();
-    const int qIdx  = (padIndex >= 0 && padIndex < 8) ? xCfg_.padQuantization[padIndex] : 2;
-    const auto div  = static_cast<xpad::audio::QuantizeDivision>(qIdx);
-    scheduler_->schedulePad(padIndex, snap.beat, div, volume * xCfg_.masterVolume);
+
+    // If no roll is active yet, default to 1/4 (button index 1)
+    if (activeRollButton_ < 0) {
+        activeRollButton_ = std::clamp(xCfg_.globalQuantization, 0, 4);
+        if (activeRollButton_ < 0 || activeRollButton_ > 4) activeRollButton_ = 1;
+    }
+
+    selectRoll(activeRollButton_, volume);
 }
 
-void App::onPadRelease(int padIndex) {
-    if (scheduler_) scheduler_->releasePad(padIndex);
+void App::selectRoll(int rollButtonIndex, float volume) {
+    if (!scheduler_) return;
+    if (rollButtonIndex < 0 || rollButtonIndex > 4) return;
+
+    const auto snap = linkManager_->snapshot();
+    const auto div = toQuantDivisionFromRulerIndex(rollButtonIndex);
+
+    // Keep the old roll running until the newly selected roll hits quantized trigger.
+    // Scheduler reuses the same logical pad (0), so the new roll replaces the old one in sync.
+    scheduler_->startRoll(0, snap.beat, div, std::max(0.05f, volume) * xCfg_.masterVolume);
+
+    activeRollButton_ = rollButtonIndex;
+    xCfg_.globalQuantization = rollButtonIndex;
 }
 
 void App::runHeadless() {
@@ -177,36 +249,44 @@ void App::runHeadless() {
 }
 
 void App::runGui() {
+    activeRollButton_ = std::clamp(xCfg_.globalQuantization, 0, 4);
+
     xpad::gui::GuiHandlers handlers;
-    handlers.onPadPress           = [this](int i, float v) { onPadPress(i, v); };
-    handlers.onPadRelease         = [this](int i)          { onPadRelease(i); };
-    handlers.onMasterVolumeChange = [this](float v)        { xCfg_.masterVolume = v; };
-    handlers.onPadQuantChange     = [this](int i, int q)   {
-        if (i >= 0 && i < 8) xCfg_.padQuantization[i] = q;
+    handlers.onTrigger = [this]() {
+        onTrigger(1.0f);
     };
-    handlers.onMidiPortSelect = [this](const std::string& port) {
-        midiManager_->closePort();
-        midiManager_->openPortByName(port);
-        xCfg_.midiPortName = port;
+    handlers.onMasterVolumeChange = [this](float v) {
+        xCfg_.masterVolume = v;
     };
-    handlers.onAudioDeviceSelect = [](const std::string&) {};
+    handlers.onSampleSelectionChange = [this](int index) {
+        if (index < 0 || index >= static_cast<int>(availableSamplePaths_.size())) return;
+        selectedSampleIndex_ = index;
+        loadSelectedSampleIntoPad0();
+    };
+    handlers.onRulerChange = [this](int rulerIndex) {
+        selectRoll(rulerIndex, 1.0f);
+    };
     handlers.onSaveConfig = [this]() {
         xCfg_.save(xpad::config::XPadConfig::defaultPath());
     };
 
     window_ = std::make_unique<xpad::gui::MainWindow>(std::move(handlers));
-    if (!window_->init(900, 480, "XPad Link")) {
+    if (!window_->init(900, 420, "XPad Link")) {
         core::Logger::error("GUI: falha na inicializacao, rodando headless");
         runHeadless();
         return;
     }
 
-    const auto midiPorts    = midiManager_->listPorts();
+    const auto midiPorts = midiManager_->listPorts();
     const auto audioDevices = xpad::audio::AudioEngine::listDevices();
-
-    window_->run(*linkManager_, *scheduler_, xCfg_, midiPorts, audioDevices);
+    window_->run(*linkManager_,
+                 *scheduler_,
+                 xCfg_,
+                 midiPorts,
+                 audioDevices,
+                 availableSampleNames_,
+                 selectedSampleIndex_,
+                 activeRollButton_);
 }
 
 } // namespace xpad::app
-
-

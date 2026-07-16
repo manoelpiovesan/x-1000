@@ -153,12 +153,13 @@ void testQuantizeNextBeat() {
 
 void testDivisionToBeats() {
     using D = xpad::audio::QuantizeDivision;
-    assertNear(xpad::audio::divisionToBeats(D::Whole),        4.0,   1e-9, "1/1 = 4 beats");
-    assertNear(xpad::audio::divisionToBeats(D::Half),         2.0,   1e-9, "1/2 = 2 beats");
-    assertNear(xpad::audio::divisionToBeats(D::Quarter),      1.0,   1e-9, "1/4 = 1 beat");
-    assertNear(xpad::audio::divisionToBeats(D::Eighth),       0.5,   1e-9, "1/8 = 0.5 beats");
-    assertNear(xpad::audio::divisionToBeats(D::Sixteenth),    0.25,  1e-9, "1/16 = 0.25 beats");
-    assertNear(xpad::audio::divisionToBeats(D::ThirtySecond), 0.125, 1e-9, "1/32 = 0.125 beats");
+    // Each name is the fraction of ONE beat (e.g. 1/4 = 0.25 beats)
+    assertNear(xpad::audio::divisionToBeats(D::Whole),        1.0,     1e-9, "1/1 = 1.0 beat");
+    assertNear(xpad::audio::divisionToBeats(D::Half),         0.5,     1e-9, "1/2 = 0.5 beats");
+    assertNear(xpad::audio::divisionToBeats(D::Quarter),      0.25,    1e-9, "1/4 = 0.25 beats");
+    assertNear(xpad::audio::divisionToBeats(D::Eighth),       0.125,   1e-9, "1/8 = 0.125 beats");
+    assertNear(xpad::audio::divisionToBeats(D::Sixteenth),    0.0625,  1e-9, "1/16 = 0.0625 beats");
+    assertNear(xpad::audio::divisionToBeats(D::ThirtySecond), 0.03125, 1e-9, "1/32 = 0.03125 beats");
 }
 
 // ─── AudioScheduler tests ────────────────────────────────────────────────────
@@ -169,21 +170,21 @@ void testSchedulerFiresAtCorrectBeat() {
 
     xpad::audio::AudioScheduler scheduler(bank);
 
-    // Schedule pad 0 at current beat 0.0 with 1/4 quantization → fires at beat 1.0
+    // 1/4 grid from beat 0.0 → fires at beat 0.25
     scheduler.schedulePad(0, 0.0, xpad::audio::QuantizeDivision::Quarter, 1.0f);
     assertTrue(scheduler.isPadScheduled(0), "Pad 0 should be pending after schedulePad");
 
     std::vector<float> buf(512 * 2, 0.f);
 
-    // Process at beat 0.5 → not yet fired
-    scheduler.processAudio(buf.data(), 512, 48000, 0.5, 120.0);
-    assertTrue(!scheduler.isPadActive(0) || scheduler.isPadScheduled(0),
-               "Pad 0 should not be active at beat 0.5 when scheduled for 1.0");
+    // Beat 0.1 → not yet fired (scheduled at 0.25)
+    scheduler.processAudio(buf.data(), 512, 48000, 0.1, 120.0);
+    assertTrue(!scheduler.isPadActive(0),
+               "Pad 0 should not be active at beat 0.1 when scheduled for 0.25");
 
-    // Process at beat 1.05 → must fire
-    scheduler.processAudio(buf.data(), 512, 48000, 1.05, 120.0);
+    // Beat 0.26 → must fire
+    scheduler.processAudio(buf.data(), 512, 48000, 0.26, 120.0);
     assertTrue(scheduler.isPadActive(0),
-               "Pad 0 should be active after beat 1.0");
+               "Pad 0 should be active after beat 0.25");
     assertTrue(!scheduler.isPadScheduled(0),
                "Pad 0 should no longer be scheduled once fired");
 }
@@ -194,9 +195,10 @@ void testSchedulerReleasesHoldPad() {
 
     xpad::audio::AudioScheduler scheduler(bank);
 
+    // 1/4 from beat 0.0 → fires at beat 0.25
     scheduler.schedulePad(1, 0.0, xpad::audio::QuantizeDivision::Quarter, 1.0f);
     std::vector<float> buf(256 * 2, 0.f);
-    scheduler.processAudio(buf.data(), 256, 48000, 1.1, 120.0); // fire
+    scheduler.processAudio(buf.data(), 256, 48000, 0.3, 120.0); // fire
     assertTrue(scheduler.isPadActive(1), "Hold pad should be active after fire");
 
     scheduler.releasePad(1);
@@ -212,7 +214,7 @@ void testSchedulerOneShot() {
     scheduler.schedulePad(2, 0.0, xpad::audio::QuantizeDivision::Quarter, 1.0f);
 
     std::vector<float> buf(512 * 2, 0.f);
-    scheduler.processAudio(buf.data(), 512, 48000, 1.1, 120.0); // fire + run past end
+    scheduler.processAudio(buf.data(), 512, 48000, 0.3, 120.0); // fire + run past end
     assertTrue(!scheduler.isPadActive(2),
                "One-shot pad should be inactive after its sample finishes");
 }
@@ -263,4 +265,5 @@ int main() {
     std::cout << "All tests passed.\n";
     return 0;
 }
+
 
