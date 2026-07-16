@@ -76,10 +76,10 @@
     2
   ],
   "ui": {
-    "filterAmount": 0.0,
-    "globalQuantization": -1,
-    "masterVolume": 1.0,
-    "pitchSemitones": 0.0,
-    "selectedSamplePath": "samples/snare.mp3"
+    "filterAmount": -0.09000000357627869,
+    "globalQuantization": 0,
+    "masterVolume": 0.5450000166893005,
+    "pitchSemitones": -0.20000000298023224,
+    "selectedSamplePath": "samples/rmx1000-snare-one-shot.wav"
   }
 }

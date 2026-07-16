@@ -7,6 +7,13 @@ namespace xpad::audio {
 
 constexpr double kPi = 3.14159265358979323846;
 
+// Signed response curve: preserves sign, adds finer control near center.
+static float applySignedCurve(float normalized, float gamma) {
+    const float clamped = std::clamp(normalized, -1.0f, 1.0f);
+    const float mag = std::pow(std::fabs(clamped), gamma);
+    return std::copysign(mag, clamped);
+}
+
 double divisionToBeats(QuantizeDivision div) noexcept {
     switch (div) {
         case QuantizeDivision::DoubleWhole:  return 2.0;
@@ -44,11 +51,16 @@ void AudioScheduler::setMasterVolume(float value) noexcept {
 void AudioScheduler::setPitchSemitones(float semitones) noexcept {
     const float clamped = std::clamp(semitones, -12.0f, 12.0f);
     pitchSemitones_.store(clamped);
-    pitchRatio_.store(std::pow(2.0f, clamped / 12.0f));
+
+    // Curved response: finer around 0 st, stronger near +-12 st.
+    constexpr float kPitchGamma = 1.7f;
+    const float normalized = clamped / 12.0f;
+    const float curvedSemitones = applySignedCurve(normalized, kPitchGamma) * 12.0f;
+    pitchRatio_.store(std::pow(2.0f, curvedSemitones / 12.0f));
 }
 
 void AudioScheduler::setFilterAmount(float amount) noexcept {
-    filterAmount_.store(std::clamp(amount, 0.0f, 1.0f));
+    filterAmount_.store(std::clamp(amount, -1.0f, 1.0f));
 }
 
 float AudioScheduler::masterVolume() const noexcept { return masterVolume_.load(); }
@@ -195,21 +207,44 @@ void AudioScheduler::processAudio(float* outputBuffer,
 
         for (std::uint32_t f = 0; f < frameCount; ++f) {
             const double endFrame = static_cast<double>((voice.loop && voice.useLoopSlice) ? loopFrames : smp.frameCount);
-            if (voice.readPosition >= endFrame) {
-                if (voice.loop) {
-                    voice.readPosition = 0.0;
-                } else {
+            if (endFrame <= 1.0) {
+                continue;
+            }
+
+            // IMPORTANT:
+            // - For loop/roll mode: timeline stays locked to Link (advance = 1 frame),
+            //   pitch changes only which source position is read.
+            // - For one-shot mode: pitch changes playback duration as expected.
+            double sourcePos = 0.0;
+
+            if (voice.loop) {
+                if (voice.readPosition >= endFrame) {
+                    voice.readPosition = std::fmod(voice.readPosition, endFrame);
+                }
+
+                sourcePos = std::fmod(voice.readPosition * static_cast<double>(pitchRatio), endFrame);
+                if (sourcePos < 0.0) {
+                    sourcePos += endFrame;
+                }
+
+                // Keep rhythmic period fixed to grid.
+                voice.readPosition += 1.0;
+            } else {
+                if (voice.readPosition >= endFrame) {
                     voice.active = false;
                     if (voice.padIndex >= 0 && voice.padIndex < xpad::samples::kPadCount) {
                         padActive_[static_cast<std::size_t>(voice.padIndex)].store(false);
                     }
                     break;
                 }
+
+                sourcePos = voice.readPosition;
+                voice.readPosition += static_cast<double>(pitchRatio);
             }
 
-            const std::uint64_t i0 = static_cast<std::uint64_t>(voice.readPosition);
+            const std::uint64_t i0 = static_cast<std::uint64_t>(sourcePos);
             const std::uint64_t i1 = std::min<std::uint64_t>(i0 + 1, smp.frameCount - 1);
-            const float frac = static_cast<float>(voice.readPosition - static_cast<double>(i0));
+            const float frac = static_cast<float>(sourcePos - static_cast<double>(i0));
 
             const float l0 = smp.data[i0 * 2 + 0];
             const float r0 = smp.data[i0 * 2 + 1];
@@ -221,24 +256,37 @@ void AudioScheduler::processAudio(float* outputBuffer,
 
             outputBuffer[f * 2 + 0] += left;
             outputBuffer[f * 2 + 1] += right;
-
-            voice.readPosition += static_cast<double>(pitchRatio);
         }
     }
 
     const float filterAmt = filterAmount_.load();
-    if (filterAmt > 0.0001f) {
-        const double cutoffHz = 18000.0 - static_cast<double>(filterAmt) * (18000.0 - 200.0);
+
+    // Curved DJ-style filter response: more precision near center.
+    constexpr float kFilterGamma = 1.8f;
+    const float curvedFilterAmt = applySignedCurve(filterAmt, kFilterGamma);
+    const float absAmt = std::fabs(curvedFilterAmt);
+    if (absAmt > 0.0001f) {
+        // One-knob DJ style filter:
+        //  < 0 => HPF, 0 => bypass, > 0 => LPF
+        const bool useLpf = curvedFilterAmt > 0.0f;
+        const double cutoffHz = useLpf
+            ? (18000.0 - static_cast<double>(absAmt) * (18000.0 - 200.0))
+            : (30.0 + static_cast<double>(absAmt) * (14000.0 - 30.0));
         const double a = std::exp(-2.0 * kPi * cutoffHz / static_cast<double>(sampleRate));
         const double b = 1.0 - a;
 
         for (std::uint32_t i = 0; i < frameCount; ++i) {
             const double inL = outputBuffer[i * 2 + 0];
             const double inR = outputBuffer[i * 2 + 1];
+
+            // Low component from one-pole LPF state (reused for both modes).
             lpfStateL_ = b * inL + a * lpfStateL_;
             lpfStateR_ = b * inR + a * lpfStateR_;
-            outputBuffer[i * 2 + 0] = static_cast<float>(lpfStateL_);
-            outputBuffer[i * 2 + 1] = static_cast<float>(lpfStateR_);
+
+            const double outL = useLpf ? lpfStateL_ : (inL - lpfStateL_);
+            const double outR = useLpf ? lpfStateR_ : (inR - lpfStateR_);
+            outputBuffer[i * 2 + 0] = static_cast<float>(outL);
+            outputBuffer[i * 2 + 1] = static_cast<float>(outR);
         }
     }
 

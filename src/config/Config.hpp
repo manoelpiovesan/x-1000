@@ -28,7 +28,7 @@ struct XPadConfig {
     // UI
     float masterVolume{1.0f};
     float pitchSemitones{0.0f};
-    float filterAmount{0.0f};
+    float filterAmount{0.0f}; // -1..0 = HPF, 0 = off, 0..1 = LPF
 
     // RMX-style global controls
     std::string selectedSamplePath{};

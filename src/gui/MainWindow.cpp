@@ -104,7 +104,7 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
         int fbW{0}, fbH{0};
         glfwGetFramebufferSize(impl_->window, &fbW, &fbH);
         ImGui::SetNextWindowSize({static_cast<float>(fbW), static_cast<float>(fbH)}, ImGuiCond_Always);
-        ImGui::Begin("XPad Link", nullptr,
+        ImGui::Begin("XPad-1000 by manoelpiovesan", nullptr,
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
 
@@ -114,7 +114,6 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
                     snapshot.beat);
 
         ImGui::Spacing();
-        ImGui::Text("Sample:");
         ImGui::PushItemWidth(480.0f);
         std::vector<const char*> sampleNamesC;
         sampleNamesC.reserve(sampleNames.size());
@@ -130,9 +129,6 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
             ImGui::TextDisabled("Nenhum sample encontrado em /samples");
         }
         ImGui::PopItemWidth();
-
-        ImGui::Spacing();
-        ImGui::Text("Regua X-PAD (RMX-1000):");
 
         const ImVec2 buttonSize{96.0f, 72.0f};
         for (int i = 0; i < 5; ++i) {
@@ -182,15 +178,14 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
 
         float filter = cfg.filterAmount;
         ImGui::PushItemWidth(240.0f);
-        if (ImGui::SliderFloat("Filter", &filter, 0.0f, 1.0f)) {
+        if (ImGui::SliderFloat("Filter", &filter, -1.0f, 1.0f, "%.2f")) {
             cfg.filterAmount = filter;
             if (handlers_.onFilterChange) handlers_.onFilterChange(filter);
         }
         ImGui::PopItemWidth();
 
-        if (ImGui::Button("Salvar Config")) {
-            if (handlers_.onSaveConfig) handlers_.onSaveConfig();
-        }
+
+
 
         ImGui::End();
 

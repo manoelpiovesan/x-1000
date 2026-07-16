@@ -291,7 +291,7 @@ void App::runGui() {
     };
 
     window_ = std::make_unique<xpad::gui::MainWindow>(std::move(handlers));
-    if (!window_->init(900, 420, "XPad Link")) {
+    if (!window_->init(900, 420, "XPad-1000 by manoelpiovesan")) {
         core::Logger::error("GUI: falha na inicializacao, rodando headless");
         runHeadless();
         return;
