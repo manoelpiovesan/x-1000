@@ -14,8 +14,25 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CTest)
+include(FetchContent)
+
 find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
+
+# --- Fetch nlohmann/json library (header-only) --------------------------------
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.2
+)
+FetchContent_GetProperties(nlohmann_json)
+if(NOT nlohmann_json_POPULATED)
+    FetchContent_Populate(nlohmann_json)
+    # Create a dummy library just for the include path
+    add_library(nlohmann_json INTERFACE)
+    target_include_directories(nlohmann_json INTERFACE "${nlohmann_json_SOURCE_DIR}/single_include")
+endif()
+set(NLOHMANN_JSON_INCLUDE_DIR "${nlohmann_json_SOURCE_DIR}/single_include")
 
 pkg_check_modules(RTMIDI     REQUIRED rtmidi)
 pkg_check_modules(RUBBERBAND REQUIRED rubberband)
@@ -66,6 +83,7 @@ target_include_directories(xpad_core PUBLIC
 target_link_libraries(xpad_core PUBLIC
     Threads::Threads
     imgui
+    nlohmann_json
     ${RTMIDI_LIBRARIES}
     ${RUBBERBAND_LIBRARIES}
     ${GLFW3_LIBRARIES}
