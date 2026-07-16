@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project version="4">
-  <component name="VcsDirectoryMappings">
-    <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/ableton-link" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/ableton-link/modules/asio-standalone" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/third_party/imgui" vcs="Git" />
-  </component>
-</project>
