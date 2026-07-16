@@ -137,13 +137,15 @@ jobs:
           VERSION="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-manual}}"
           VERSION="${VERSION//\//-}"
           ZIP_NAME="xpad-link-windows-${VERSION}.zip"
+          ARTIFACT_NAME="xpad-link-windows-${VERSION}-raw"
           tar -a -cf "$ZIP_NAME" -C dist .
           echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> "$GITHUB_ENV"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: xpad-link-windows-${{ github.head_ref || github.ref_name }}-raw
+          name: ${{ env.ARTIFACT_NAME }}
           path: dist/
 
       - name: Attach artifact to release
