@@ -257,6 +257,49 @@ void App::loadBank() {
     core::Logger::info("SampleBank: " + std::to_string(availableSamplePaths_.size()) + " sample(s) disponivel(is)");
 }
 
+std::string App::importSamples(const std::vector<std::filesystem::path>& files) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::create_directories(xCfg_.samplesDirectory, ec);
+
+    int copied = 0;
+    int skipped = 0;
+    std::string firstImported;
+
+    for (const auto& src : files) {
+        if (!fs::is_regular_file(src, ec) || !isSupportedAudioFile(src)) {
+            ++skipped;
+            continue;
+        }
+
+        // Never overwrite: "name.wav" -> "name (1).wav" -> "name (2).wav" ...
+        fs::path dest = fs::path(xCfg_.samplesDirectory) / src.filename();
+        for (int n = 1; fs::exists(dest, ec) && n < 1000; ++n) {
+            dest = fs::path(xCfg_.samplesDirectory) /
+                   (src.stem().string() + " (" + std::to_string(n) + ")" + src.extension().string());
+        }
+
+        fs::copy_file(src, dest, fs::copy_options::none, ec);
+        if (ec) {
+            core::Logger::error("Importar sample falhou: " + src.string() + " (" + ec.message() + ")");
+            ++skipped;
+            continue;
+        }
+        if (firstImported.empty()) firstImported = dest.string();
+        ++copied;
+        core::Logger::info("Sample importado: " + dest.string());
+    }
+
+    if (copied > 0) {
+        xCfg_.selectedSamplePath = firstImported; // select the first imported file
+        loadBank();
+    }
+
+    std::string msg = "Imported " + std::to_string(copied) + " sample(s)";
+    if (skipped > 0) msg += ", skipped " + std::to_string(skipped);
+    return msg;
+}
+
 void App::loadSelectedSampleIntoPad0() {
     if (selectedSampleIndex_ < 0 || selectedSampleIndex_ >= static_cast<int>(availableSamplePaths_.size())) {
         return;
@@ -609,6 +652,9 @@ void App::runGui() {
     handlers.onQuantizeGridChange = [this](int index) { setQuantizeGrid(index); };
     handlers.onTap = [this]() { tapTempo(); };
     handlers.onNudge = [this](int direction) { nudgeBeat(direction); };
+    handlers.onImportSamples = [this](const std::vector<std::filesystem::path>& files) {
+        return importSamples(files);
+    };
     handlers.onMidiPortChange = [this](const std::string& portName) {
         applyMidiPortSelection(portName);
     };

@@ -34,6 +34,7 @@ X-1000 gives you the same build-up experience with any inexpensive MIDI controll
 - **Pitch** and **Filter** applied directly to the roll, plus a **Master** level
 - **Sample ring** to pick the sample, with a beat-synced glow
 - **MIDI Learn** for every control: roll buttons, knobs and sample prev/next
+- **Import samples** with a button or by dragging audio files onto the window; they are copied into `samples/`
 - MIDI input and audio output selectable from the UI
 
 <div align="center">

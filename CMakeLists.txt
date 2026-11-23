@@ -66,6 +66,7 @@ add_library(xpad_core STATIC
     src/audio/AudioScheduler.cpp
     src/audio/TimeStretch.cpp
     src/config/Config.cpp
+    src/gui/FileDialog.cpp
     src/gui/MainWindow.cpp
     src/link/LinkManager.cpp
     src/midi/MidiManager.cpp
@@ -79,6 +80,10 @@ target_include_directories(xpad_core PUBLIC
     ${RUBBERBAND_INCLUDE_DIRS}
     ${GLFW3_INCLUDE_DIRS}
 )
+
+if(WIN32)
+    target_link_libraries(xpad_core PUBLIC comdlg32)
+endif()
 
 target_link_libraries(xpad_core PUBLIC
     Threads::Threads

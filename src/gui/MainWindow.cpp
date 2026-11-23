@@ -1,5 +1,6 @@
 #include "gui/MainWindow.hpp"
 #include "core/Logger.hpp"
+#include "gui/FileDialog.hpp"
 
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -7,6 +8,7 @@
 #include <imgui_impl_opengl3.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -20,6 +22,10 @@ static const char* kRollLabels[] = {"1/8", "1/4", "1/2", "1/1", "2/1"};
 struct MainWindow::Impl {
     GLFWwindow* window{nullptr};
     bool open{false};
+
+    // Files dropped on the window or picked in the dialog, imported at the start of a frame.
+    std::vector<std::filesystem::path> pendingImports;
+    bool wantImportDialog{false};
 };
 
 MainWindow::MainWindow(GuiHandlers handlers)
@@ -49,6 +55,15 @@ bool MainWindow::init(int width, int height, const char* title) {
         return false;
     }
 
+    glfwSetWindowUserPointer(impl_->window, impl_.get());
+    glfwSetDropCallback(impl_->window, [](GLFWwindow* window, int count, const char** paths) {
+        auto* impl = static_cast<Impl*>(glfwGetWindowUserPointer(window));
+        if (!impl) return;
+        for (int i = 0; i < count; ++i) {
+            impl->pendingImports.emplace_back(
+                std::u8string(reinterpret_cast<const char8_t*>(paths[i])));
+        }
+    });
     glfwMakeContextCurrent(impl_->window);
     glfwSwapInterval(1);
 
@@ -255,8 +270,25 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
         return clicked;
     };
 
+    std::string importMessage;
+    auto importMessageUntil = std::chrono::steady_clock::now();
+
     while (!glfwWindowShouldClose(impl_->window)) {
         glfwPollEvents();
+
+        // Imports run before the frame so the sample list is stable while drawing.
+        if (impl_->wantImportDialog) {
+            impl_->wantImportDialog = false;
+            const auto picked = pickAudioFiles();
+            impl_->pendingImports.insert(impl_->pendingImports.end(), picked.begin(), picked.end());
+        }
+        if (!impl_->pendingImports.empty()) {
+            if (handlers_.onImportSamples) {
+                importMessage = handlers_.onImportSamples(impl_->pendingImports);
+                importMessageUntil = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            }
+            impl_->pendingImports.clear();
+        }
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -514,14 +546,22 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
                 dl->AddText(ImGui::GetFont(), 12.0f, {p0.x + 24, p0.y + 5}, col(225, 225, 230), "MIDI LEARN");
             }
 
+            // IMPORT samples (button or drag & drop onto the window)
+            if (smallButton("##import", "IMPORT SAMPLES", P(435, sy + 40), {110.0f, 24.0f}) && !midiLearnMode) {
+                impl_->wantImportDialog = true;
+            }
+            if (!importMessage.empty() && std::chrono::steady_clock::now() < importMessageUntil) {
+                dl->AddText(ImGui::GetFont(), 11.0f, P(380, sy + 56), col(120, 220, 140), importMessage.c_str());
+            }
+
             // MIDI status
             if (handlers_.onGetMidiStatus) {
                 const auto [portLabel, msgLabel] = handlers_.onGetMidiStatus();
                 const bool midiConnected = !portLabel.empty() && portLabel != "(none)";
-                const ImVec2 c = P(388, sy + 43);
+                const ImVec2 c = P(388, sy + 76);
                 dl->AddCircleFilled(c, 4.0f, midiConnected ? col(70, 255, 90) : col(240, 110, 70), 12);
                 const std::string status = midiConnected ? portLabel : std::string("No MIDI");
-                dl->AddText(ImGui::GetFont(), 12.0f, P(398, sy + 36), col(190, 190, 198), status.substr(0, 14).c_str());
+                dl->AddText(ImGui::GetFont(), 12.0f, P(398, sy + 69), col(190, 190, 198), status.substr(0, 14).c_str());
                 dl->AddText(ImGui::GetFont(), 11.0f, P(18, sy + 66), col(120, 120, 128),
                             ("Last: " + msgLabel).c_str());
             }

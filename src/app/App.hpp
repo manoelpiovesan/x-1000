@@ -8,6 +8,7 @@
 #include "samples/SampleBank.hpp"
 #include <chrono>
 #include <deque>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -38,6 +39,7 @@ private:
     void initSubsystems();
     void shutdownSubsystems();
     void loadBank();
+    std::string importSamples(const std::vector<std::filesystem::path>& files);
     void loadSelectedSampleIntoPad0();
     void runHeadless();
     void runGui();

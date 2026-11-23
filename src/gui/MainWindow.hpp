@@ -5,6 +5,7 @@
 #include "link/LinkManager.hpp"
 #include "midi/MidiManager.hpp"
 #include "samples/SampleBank.hpp"
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
@@ -28,6 +29,8 @@ struct GuiHandlers {
     std::function<void(int gridIndex)>              onQuantizeGridChange;
     std::function<void()>                           onTap;
     std::function<void(int direction)>              onNudge;
+    // Copies the given audio files into the samples folder; returns a message for the UI.
+    std::function<std::string(const std::vector<std::filesystem::path>&)> onImportSamples;
     std::function<void()>                           onSaveConfig;
 };
 
