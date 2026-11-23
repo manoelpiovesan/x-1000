@@ -8,6 +8,7 @@ Fully mappable to MIDI controllers, featuring native Pitch and Filter effects ap
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/manoelpiovesan/x-1000/windows-main.yml?style=for-the-badge)](https://github.com/manoelpiovesan/x-1000/actions)
 [![Latest Release](https://img.shields.io/github/v/release/manoelpiovesan/x-1000?style=for-the-badge)](https://github.com/manoelpiovesan/x-1000/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/manoelpiovesan/x-1000/total?style=for-the-badge&label=Downloads)](https://github.com/manoelpiovesan/x-1000/releases)
 [![License](https://img.shields.io/github/license/manoelpiovesan/x-1000?style=for-the-badge)](LICENSE)
 [![Ko-Fi](https://img.shields.io/badge/Support-Ko--Fi-ff5f5f?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/L3L61SRB88)
 
@@ -16,20 +17,39 @@ Fully mappable to MIDI controllers, featuring native Pitch and Filter effects ap
 
 ---
 
-## Project
+<div align="center">
+<img src="docs/screenshot.png" alt="X-1000 interface" width="820">
+</div>
 
-This project aims to replicate the Sample Roll (X-Pad) functionality of the Pioneer RMX-1000,
-which currently costs around $1,000 (approximately R$12,000 in Brazil), allowing users to
-achieve the same experience with an inexpensive MIDI controller of their choice.
+## Why
 
+The Pioneer RMX-1000 Sample Roll (X-Pad) costs around $1,000 (≈ R$12,000 in Brazil).
+X-1000 gives you the same build-up experience with any inexpensive MIDI controller.
 
-## Star this repository
+## Features
 
-If you find this project useful or interesting, please consider giving it a star on GitHub.
+- **Roll FX** with 1/8, 1/4, 1/2, 1/1 and 2/1 quantization, synced to Ableton Link
+- **Pitch** and **Filter** applied directly to the roll, plus a **Master** level
+- **Sample ring** to pick the sample, with a beat-synced glow
+- **MIDI Learn** for every control: roll buttons, knobs and sample prev/next
+- MIDI input and audio output selectable from the UI
 
-## Support the project
+<div align="center">
+<img src="docs/midi-learn.png" alt="MIDI Learn mode" width="820">
+</div>
 
-If this project has helped you, consider supporting its development with a donation on **Ko-fi**. Every contribution helps cover development time, maintenance, and future improvements.
+## Usage
+
+1. Download the latest build from [Releases](https://github.com/manoelpiovesan/x-1000/releases/latest).
+2. Pick your **MIDI IN** and **AUDIO** devices.
+3. Enable **MIDI LEARN**, click a control, then move or press the one on your controller.
+4. Drag knobs vertically (hold `Shift` for fine control, double click to reset).
+
+## Support
+
+If X-1000 helps you, leave a star on GitHub or [buy me a coffee on Ko-fi](https://ko-fi.com/L3L61SRB88).
+
+with a donation on **Ko-fi**. Every contribution helps cover development time, maintenance, and future improvements.
 
 **☕ Buy me a coffee:** https://ko-fi.com/L3L61SRB88
 

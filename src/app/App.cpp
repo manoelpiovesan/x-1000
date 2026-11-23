@@ -584,7 +584,7 @@ void App::runGui() {
     };
 
     window_ = std::make_unique<xpad::gui::MainWindow>(std::move(handlers));
-    if (!window_->init(900, 420, "X-1000 | @manoelpiovesan")) {
+    if (!window_->init(960, 440, "X-1000 | @manoelpiovesan")) {
         core::Logger::error("GUI: falha na inicializacao, rodando headless");
         runHeadless();
         return;
