@@ -1,5 +1,7 @@
 #include "audio/AudioScheduler.hpp"
 
+#include <rubberband/RubberBandStretcher.h>
+
 #include <algorithm>
 #include <cmath>
 
@@ -34,6 +36,8 @@ double quantizeNextBeat(double currentBeat, QuantizeDivision div) noexcept {
 
 AudioScheduler::AudioScheduler(std::shared_ptr<xpad::samples::SampleBank> bank)
     : bank_(std::move(bank)) {
+    for (auto& ch : inScratch_)  ch.assign(kScratchFrames, 0.0f);
+    for (auto& ch : outScratch_) ch.assign(kScratchFrames, 0.0f);
     for (auto& v : voices_) v.active = false;
     for (auto& f : padActive_) f.store(false);
     for (auto& f : padScheduled_) f.store(false);
@@ -103,6 +107,7 @@ void AudioScheduler::schedulePad(int padIndex,
             .loop = isLoop,
             .volume = volume,
             .quantization = quantization,
+            .stretcher = isLoop ? makeStretcher(*sample) : nullptr,
         });
     }
 
@@ -143,6 +148,7 @@ void AudioScheduler::startRoll(int padIndex,
             .loop = true,
             .volume = volume,
             .quantization = rollDivision,
+            .stretcher = makeStretcher(*sample),
         });
     }
 
@@ -216,6 +222,7 @@ void AudioScheduler::processAudio(float* outputBuffer,
                                   double tempoBpm) {
     std::fill(outputBuffer, outputBuffer + frameCount * 2, 0.0f);
     if (frameCount == 0 || sampleRate == 0) return;
+    tempoBpm_ = tempoBpm;
 
     {
         std::scoped_lock lock(scheduleMutex_);
@@ -238,7 +245,8 @@ void AudioScheduler::processAudio(float* outputBuffer,
                               it->triggerAtBeat,
                               it->volume,
                               it->loop,
-                              it->quantization);
+                              it->quantization,
+                              std::move(it->stretcher));
                 padScheduled_[static_cast<std::size_t>(it->padIndex)].store(false);
                 it = pendingEvents_.erase(it);
             } else {
@@ -260,6 +268,27 @@ void AudioScheduler::processAudio(float* outputBuffer,
         if (voice.loop && voice.useLoopSlice) {
             loopFrames = loopSliceFrames(voice, tempoBpm);
             if (loopFrames == 0) loopFrames = smp.frameCount;
+        }
+
+        if (voice.loop && voice.stretcher) {
+            // Pitch is applied by the stretcher; the loop period stays locked to the grid.
+            auto& st = *voice.stretcher;
+            const std::uint64_t end = voice.useLoopSlice ? loopFrames : smp.frameCount;
+            if (pitchRatio != voice.lastPitchScale) {
+                st.setPitchScale(static_cast<double>(pitchRatio));
+                voice.lastPitchScale = pitchRatio;
+            }
+            const std::size_t want = std::min<std::size_t>(frameCount, kScratchFrames);
+            for (int guard = 0; guard < 64 && static_cast<std::size_t>(std::max(0, st.available())) < want; ++guard) {
+                feedStretcher(voice, std::clamp<std::size_t>(st.getSamplesRequired(), 1, kScratchFrames), end);
+            }
+            float* out[2] = {outScratch_[0].data(), outScratch_[1].data()};
+            const std::size_t got = st.retrieve(out, want);
+            for (std::size_t f = 0; f < got; ++f) {
+                outputBuffer[f * 2 + 0] += outScratch_[0][f] * vol;
+                outputBuffer[f * 2 + 1] += outScratch_[1][f] * vol;
+            }
+            continue;
         }
 
         for (std::uint32_t f = 0; f < frameCount; ++f) {
@@ -365,11 +394,72 @@ bool AudioScheduler::isPadScheduled(int padIndex) const noexcept {
     return padScheduled_[static_cast<std::size_t>(padIndex)].load();
 }
 
+std::shared_ptr<RubberBand::RubberBandStretcher>
+AudioScheduler::makeStretcher(const xpad::samples::Sample& sample) const {
+    using RubberBand::RubberBandStretcher;
+    const auto opts = RubberBandStretcher::OptionProcessRealTime |
+                      RubberBandStretcher::OptionThreadingNever |
+                      RubberBandStretcher::OptionPitchHighConsistency;
+    auto st = std::make_shared<RubberBandStretcher>(sample.sampleRate, 2, opts, 1.0, 1.0);
+    st->setMaxProcessSize(kScratchFrames);
+    return st;
+}
+
+// Feeds `frames` source frames, wrapping at the loop end, into the stretcher.
+void AudioScheduler::feedStretcher(Voice& voice, std::uint64_t frames, std::uint64_t endFrame) {
+    const auto& smp = *voice.sample;
+    endFrame = std::clamp<std::uint64_t>(endFrame, 1, smp.frameCount);
+    frames = std::min<std::uint64_t>(frames, kScratchFrames);
+
+    std::uint64_t pos = static_cast<std::uint64_t>(voice.feedPosition);
+    for (std::uint64_t i = 0; i < frames; ++i) {
+        if (pos >= endFrame) pos = 0;
+        inScratch_[0][i] = smp.data[pos * 2 + 0];
+        inScratch_[1][i] = smp.data[pos * 2 + 1];
+        ++pos;
+    }
+    voice.feedPosition = static_cast<double>(pos);
+
+    const float* in[2] = {inScratch_[0].data(), inScratch_[1].data()};
+    voice.stretcher->process(in, static_cast<std::size_t>(frames), false);
+}
+
+// Compensates the stretcher latency so output frame 0 lines up with source frame 0,
+// which keeps the roll on the grid.
+void AudioScheduler::primeStretcher(Voice& voice, std::uint64_t endFrame) {
+    auto& st = *voice.stretcher;
+    st.setPitchScale(static_cast<double>(pitchRatio_.load()));
+    voice.lastPitchScale = pitchRatio_.load();
+    voice.feedPosition = 0.0;
+
+    std::fill(inScratch_[0].begin(), inScratch_[0].end(), 0.0f);
+    std::fill(inScratch_[1].begin(), inScratch_[1].end(), 0.0f);
+    std::size_t pad = st.getPreferredStartPad();
+    const float* silence[2] = {inScratch_[0].data(), inScratch_[1].data()};
+    while (pad > 0) {
+        const std::size_t n = std::min(pad, kScratchFrames);
+        st.process(silence, n, false);
+        pad -= n;
+    }
+
+    std::size_t delay = st.getStartDelay();
+    for (int guard = 0; guard < 64 && static_cast<std::size_t>(std::max(0, st.available())) < delay; ++guard) {
+        feedStretcher(voice, std::clamp<std::size_t>(st.getSamplesRequired(), 1, kScratchFrames), endFrame);
+    }
+    float* out[2] = {outScratch_[0].data(), outScratch_[1].data()};
+    while (delay > 0) {
+        const std::size_t got = st.retrieve(out, std::min(delay, kScratchFrames));
+        if (got == 0) break;
+        delay -= got;
+    }
+}
+
 void AudioScheduler::activateVoice(int padIndex,
                                    double triggerBeat,
                                    float volume,
                                    bool loop,
-                                   QuantizeDivision quantization) {
+                                   QuantizeDivision quantization,
+                                   std::shared_ptr<RubberBand::RubberBandStretcher> stretcher) {
     std::shared_ptr<xpad::samples::Sample> sample;
     {
         std::scoped_lock lock(bankMutex_);
@@ -403,6 +493,12 @@ void AudioScheduler::activateVoice(int padIndex,
     target->padIndex = padIndex;
     target->useLoopSlice = loop;
     target->loopDivision = quantization;
+    target->stretcher = loop ? std::move(stretcher) : nullptr;
+    if (target->stretcher) {
+        const std::uint64_t end = target->useLoopSlice ? loopSliceFrames(*target, tempoBpm_)
+                                                       : sample->frameCount;
+        primeStretcher(*target, end == 0 ? sample->frameCount : end);
+    }
 
     if (padIndex >= 0 && padIndex < xpad::samples::kPadCount) {
         padActive_[static_cast<std::size_t>(padIndex)].store(true);

@@ -1,6 +1,7 @@
 #pragma once
 #include "samples/Sample.hpp"
 #include "samples/SampleBank.hpp"
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -9,6 +10,8 @@
 #include <mutex>
 #include <optional>
 #include <vector>
+
+namespace RubberBand { class RubberBandStretcher; }
 
 namespace xpad::audio {
 
@@ -35,6 +38,11 @@ struct Voice {
 
     bool useLoopSlice{false};
     QuantizeDivision loopDivision{QuantizeDivision::Quarter};
+
+    // Real-time pitch shifter for loop/roll voices: changes pitch, keeps tempo.
+    std::shared_ptr<RubberBand::RubberBandStretcher> stretcher;
+    double feedPosition{0.0};
+    float lastPitchScale{1.0f};
 };
 
 struct ScheduledEvent {
@@ -43,6 +51,7 @@ struct ScheduledEvent {
     bool loop{false};
     float volume{1.0f};
     QuantizeDivision quantization{QuantizeDivision::Quarter};
+    std::shared_ptr<RubberBand::RubberBandStretcher> stretcher;
 };
 
 double quantizeNextBeat(double currentBeat, QuantizeDivision div) noexcept;
@@ -102,7 +111,12 @@ private:
                        double triggerBeat,
                        float volume,
                        bool loop,
-                       QuantizeDivision quantization);
+                       QuantizeDivision quantization,
+                       std::shared_ptr<RubberBand::RubberBandStretcher> stretcher);
+    [[nodiscard]] std::shared_ptr<RubberBand::RubberBandStretcher>
+        makeStretcher(const xpad::samples::Sample& sample) const;
+    void feedStretcher(Voice& voice, std::uint64_t frames, std::uint64_t endFrame);
+    void primeStretcher(Voice& voice, std::uint64_t endFrame);
     [[nodiscard]] std::uint64_t loopSliceFrames(const Voice& voice, double tempoBpm) const;
     void stopVoice(int padIndex);
 
@@ -131,9 +145,14 @@ private:
     std::atomic<float> pitchRatio_{1.0f};
     std::atomic<float> filterAmount_{0.0f};
 
+    static constexpr std::size_t kScratchFrames = 4096;
+    std::array<std::vector<float>, 2> inScratch_;
+    std::array<std::vector<float>, 2> outScratch_;
+
     double lpfStateL_{0.0};
     double lpfStateR_{0.0};
     double lastProcessedBeat_{-1.0};
+    double tempoBpm_{120.0};
 };
 
 } // namespace xpad::audio

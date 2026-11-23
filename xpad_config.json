@@ -1,7 +1,7 @@
 {
   "audio": {
     "bufferFrames": 256,
-    "device": "Family 17h (Models 00h-0fh) HD Audio Controller Estéreo analógico",
+    "device": "Tiger Lake-LP Smart Sound Technology Audio Controller Speaker + Headphones",
     "sampleRate": 48000
   },
   "bank": {
@@ -138,10 +138,13 @@
     2
   ],
   "ui": {
+    "beatOffset": 0.0,
     "filterAmount": 0.24409449100494385,
-    "globalQuantization": -1,
-    "masterVolume": 0.4803149700164795,
-    "pitchSemitones": 0.2834644317626953,
-    "selectedSamplePath": "samples/SNARE.wav"
+    "globalQuantization": 1,
+    "masterVolume": 0.5636483430862427,
+    "pitchSemitones": 1.3333349227905273,
+    "quantizeEnabled": true,
+    "quantizeGrid": 3,
+    "selectedSamplePath": "samples/CLAP.wav"
   }
 }
