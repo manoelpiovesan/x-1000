@@ -24,6 +24,10 @@ struct GuiHandlers {
     std::function<void(bool enabled)>               onSetMidiLearnMode;
     std::function<void(const std::string& control)> onBeginMidiLearn;
     std::function<std::pair<std::string, std::string>()> onGetMidiStatus;
+    std::function<void(bool enabled)>               onQuantizeChange;
+    std::function<void(int gridIndex)>              onQuantizeGridChange;
+    std::function<void()>                           onTap;
+    std::function<void(int direction)>              onNudge;
     std::function<void()>                           onSaveConfig;
 };
 

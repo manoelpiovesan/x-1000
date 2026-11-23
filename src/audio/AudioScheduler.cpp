@@ -63,6 +63,12 @@ void AudioScheduler::setFilterAmount(float amount) noexcept {
     filterAmount_.store(std::clamp(amount, -1.0f, 1.0f));
 }
 
+void AudioScheduler::setQuantizeEnabled(bool enabled) noexcept { quantizeEnabled_.store(enabled); }
+void AudioScheduler::setQuantizeGrid(QuantizeDivision grid) noexcept { quantizeGrid_.store(static_cast<int>(grid)); }
+void AudioScheduler::setBeatOffset(double beats) noexcept { beatOffset_.store(std::clamp(beats, -0.5, 0.5)); }
+bool AudioScheduler::quantizeEnabled() const noexcept { return quantizeEnabled_.load(); }
+double AudioScheduler::beatOffset() const noexcept { return beatOffset_.load(); }
+
 float AudioScheduler::masterVolume() const noexcept { return masterVolume_.load(); }
 float AudioScheduler::pitchSemitones() const noexcept { return pitchSemitones_.load(); }
 float AudioScheduler::filterAmount() const noexcept { return filterAmount_.load(); }
@@ -116,9 +122,17 @@ void AudioScheduler::startRoll(int padIndex,
     }
     if (!sample || !sample->loaded()) return;
 
-    const double triggerAtBeat = quantizeNextBeat(currentBeat, rollDivision);
+    // Quantize on: wait for the next grid line. Off: fire on the next audio block.
+    const double shiftedBeat = currentBeat + beatOffset_.load();
+    const double triggerAtBeat = quantizeEnabled_.load()
+        ? quantizeNextBeat(shiftedBeat, static_cast<QuantizeDivision>(quantizeGrid_.load()))
+        : shiftedBeat;
     {
         std::scoped_lock lock(scheduleMutex_);
+        pendingStops_.erase(
+            std::remove_if(pendingStops_.begin(), pendingStops_.end(),
+                           [padIndex](const PendingStop& e){ return e.padIndex == padIndex; }),
+            pendingStops_.end());
         pendingEvents_.erase(
             std::remove_if(pendingEvents_.begin(), pendingEvents_.end(),
                            [padIndex](const ScheduledEvent& e){ return e.padIndex == padIndex; }),
@@ -144,10 +158,41 @@ void AudioScheduler::stopRoll(int padIndex) {
             std::remove_if(pendingEvents_.begin(), pendingEvents_.end(),
                            [padIndex](const ScheduledEvent& e){ return e.padIndex == padIndex; }),
             pendingEvents_.end());
+        pendingStops_.erase(
+            std::remove_if(pendingStops_.begin(), pendingStops_.end(),
+                           [padIndex](const PendingStop& e){ return e.padIndex == padIndex; }),
+            pendingStops_.end());
     }
 
     stopVoice(padIndex);
     padScheduled_[static_cast<std::size_t>(padIndex)].store(false);
+}
+
+void AudioScheduler::requestStopRoll(int padIndex, double currentBeat) {
+    if (padIndex < 0 || padIndex >= xpad::samples::kPadCount) return;
+
+    if (!quantizeEnabled_.load()) {
+        stopRoll(padIndex);
+        return;
+    }
+
+    const double stopAtBeat = quantizeNextBeat(currentBeat + beatOffset_.load(),
+                                               static_cast<QuantizeDivision>(quantizeGrid_.load()));
+    std::scoped_lock lock(scheduleMutex_);
+    // A roll still waiting for its start is simply cancelled.
+    const auto before = pendingEvents_.size();
+    pendingEvents_.erase(
+        std::remove_if(pendingEvents_.begin(), pendingEvents_.end(),
+                       [padIndex](const ScheduledEvent& e){ return e.padIndex == padIndex; }),
+        pendingEvents_.end());
+    if (pendingEvents_.size() != before) {
+        padScheduled_[static_cast<std::size_t>(padIndex)].store(false);
+    }
+    pendingStops_.erase(
+        std::remove_if(pendingStops_.begin(), pendingStops_.end(),
+                       [padIndex](const PendingStop& e){ return e.padIndex == padIndex; }),
+        pendingStops_.end());
+    pendingStops_.push_back(PendingStop{padIndex, stopAtBeat});
 }
 
 void AudioScheduler::releasePad(int padIndex) {
@@ -174,9 +219,21 @@ void AudioScheduler::processAudio(float* outputBuffer,
 
     {
         std::scoped_lock lock(scheduleMutex_);
+        const double shiftedBeat = currentBeat + beatOffset_.load();
+
+        auto stopIt = pendingStops_.begin();
+        while (stopIt != pendingStops_.end()) {
+            if (shiftedBeat >= stopIt->stopAtBeat) {
+                stopVoice(stopIt->padIndex);
+                stopIt = pendingStops_.erase(stopIt);
+            } else {
+                ++stopIt;
+            }
+        }
+
         auto it = pendingEvents_.begin();
         while (it != pendingEvents_.end()) {
-            if (currentBeat >= it->triggerAtBeat) {
+            if (shiftedBeat >= it->triggerAtBeat) {
                 activateVoice(it->padIndex,
                               it->triggerAtBeat,
                               it->volume,

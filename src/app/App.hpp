@@ -6,6 +6,8 @@
 #include "link/LinkManager.hpp"
 #include "midi/MidiManager.hpp"
 #include "samples/SampleBank.hpp"
+#include <chrono>
+#include <deque>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -43,6 +45,10 @@ private:
     void onMidiMessage(const xpad::midi::MidiMessage& msg);
     void onTrigger(float volume);
     void selectRoll(int rollButtonIndex, float volume);
+    void setQuantizeEnabled(bool enabled);
+    void setQuantizeGrid(int gridIndex);
+    void tapTempo();
+    void nudgeBeat(int direction);
     void beginMidiLearn(const std::string& controlId);
     void setMidiLearnMode(bool enabled);
     void applyMidiPortSelection(const std::string& portName);
@@ -65,6 +71,7 @@ private:
     int selectedSampleIndex_{0};
     int activeRollButton_{-1}; // 0..4 => 1/8,1/4,1/2,1/1,2/1
     bool midiLearnMode_{false};
+    std::deque<std::chrono::steady_clock::time_point> tapTimes_;
     std::string pendingMidiLearnControl_{};
     std::unordered_map<std::string, xpad::config::MidiLearnBinding> midiBindingByControl_;
     std::unordered_map<std::string, std::string> midiBindingLabelByControl_;

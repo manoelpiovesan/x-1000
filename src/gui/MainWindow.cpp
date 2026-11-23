@@ -290,13 +290,37 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
         dl->AddText(ImGui::GetFont(), 11.0f, P(W - 245, 31), col(150, 150, 158), "REMIX STATION");
 
         // ---- header: BPM LCD, beat LEDs, link ----
-        panelLabel(dl, P(70, 22), "QUANTIZE");
+        // QUANTIZE on/off, grid selector
         {
-            const ImVec2 q0 = P(30, 34), q1 = P(110, 54);
-            const bool quantOn = activeRollButton >= 0;
-            dl->AddRectFilled(q0, q1, quantOn ? col(205, 40, 40) : col(95, 28, 28), 3.0f);
+            const ImVec2 sz{80.0f, 22.0f};
+            ImGui::SetCursorScreenPos(P(30, 16));
+            if (ImGui::InvisibleButton("##quantize", sz)) {
+                if (midiLearnMode) {
+                    beginLearn("quantize");
+                } else {
+                    cfg.quantizeEnabled = !cfg.quantizeEnabled;
+                    if (handlers_.onQuantizeChange) handlers_.onQuantizeChange(cfg.quantizeEnabled);
+                }
+            }
+            const ImVec2 q0 = P(30, 16), q1 = P(30 + sz.x, 16 + sz.y);
+            const bool on = cfg.quantizeEnabled;
+            if (on) dl->AddRectFilled({q0.x - 3, q0.y - 3}, {q1.x + 3, q1.y + 3}, col(255, 50, 50, 60), 5.0f);
+            dl->AddRectFilled(q0, q1, on ? col(205, 40, 40) : col(70, 24, 24), 3.0f);
             dl->AddRect(q0, q1, col(215, 215, 220), 3.0f, 0, 1.5f);
-            textCentered(dl, P(70, 44), 13.0f, col(255, 255, 255), quantOn ? kRollLabels[activeRollButton] : "OFF");
+            textCentered(dl, {(q0.x + q1.x) * 0.5f, (q0.y + q1.y) * 0.5f}, 12.0f,
+                         on ? col(255, 255, 255) : col(190, 150, 150), "QUANTIZE");
+            if (midiLearnMode || !bindingLabel("quantize").empty() || pendingMidiLearnControl == "quantize")
+                drawBinding(dl, P(70, 50), "quantize");
+
+            const int grid = std::clamp(cfg.quantizeGrid, 0, 4);
+            char gl[24];
+            std::snprintf(gl, sizeof(gl), "GRID %s", kRollLabels[grid]);
+            if (smallButton("##qgrid", gl, P(70, 64), {80, 18})) {
+                if (!midiLearnMode) {
+                    cfg.quantizeGrid = (grid + 1) % 5;
+                    if (handlers_.onQuantizeGridChange) handlers_.onQuantizeGridChange(cfg.quantizeGrid);
+                }
+            }
         }
 
         {
@@ -324,6 +348,34 @@ void MainWindow::run(const xpad::link::LinkManager& linkManager,
             dl->AddCircleFilled(c, 6.0f, snapshot.connected ? col(70, 255, 90) : col(120, 50, 40), 20);
             if (snapshot.connected) dl->AddCircle(c, 9.0f, col(70, 255, 90, 90), 20, 3.0f);
             panelLabel(dl, P(450, 49), snapshot.connected ? "LINK" : "NO LINK", col(150, 150, 158));
+        }
+
+        // TAP tempo and NUDGE (beat phase)
+        {
+            auto mapped = [&](const char* id, ImVec2 c, const char* text, ImVec2 size) {
+                const bool clicked = smallButton(id, text, c, size);
+                return clicked;
+            };
+            if (mapped("##tap", P(330, 70), "TAP", {50, 18})) {
+                if (midiLearnMode) beginLearn("tap");
+                else if (handlers_.onTap) handlers_.onTap();
+            }
+            if (mapped("##nudgem", P(388, 70), "-", {26, 18})) {
+                if (midiLearnMode) beginLearn("nudge_minus");
+                else if (handlers_.onNudge) handlers_.onNudge(-1);
+            }
+            if (mapped("##nudgep", P(492, 70), "+", {26, 18})) {
+                if (midiLearnMode) beginLearn("nudge_plus");
+                else if (handlers_.onNudge) handlers_.onNudge(1);
+            }
+            char nb[24];
+            std::snprintf(nb, sizeof(nb), "NUDGE %+.2f", cfg.beatOffset);
+            panelLabel(dl, P(440, 70), nb, col(150, 150, 158));
+            if (midiLearnMode) {
+                drawBinding(dl, P(330, 86), "tap");
+                drawBinding(dl, P(388, 86), "nudge_minus");
+                drawBinding(dl, P(492, 86), "nudge_plus");
+            }
         }
 
         // ---- FX source arrow panel with the three main knobs ----

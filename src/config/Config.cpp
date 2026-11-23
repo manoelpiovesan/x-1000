@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "config/Config.hpp"
 #include "core/Logger.hpp"
 #include <nlohmann/json.hpp>
@@ -47,6 +48,9 @@ bool XPadConfig::save(const std::string& filePath) const {
         j["ui"]["filterAmount"]      = filterAmount;
         j["ui"]["selectedSamplePath"] = selectedSamplePath;
         j["ui"]["globalQuantization"] = globalQuantization;
+        j["ui"]["quantizeEnabled"]    = quantizeEnabled;
+        j["ui"]["quantizeGrid"]       = quantizeGrid;
+        j["ui"]["beatOffset"]         = beatOffset;
 
         j["padQuantization"] = padQuantization;
 
@@ -110,6 +114,9 @@ bool XPadConfig::load(const std::string& filePath) {
         filterAmount      = j.value("/ui/filterAmount"_json_pointer, 0.0f);
         selectedSamplePath= j.value("/ui/selectedSamplePath"_json_pointer, std::string{});
         globalQuantization= j.value("/ui/globalQuantization"_json_pointer, 3);
+        quantizeEnabled   = j.value("/ui/quantizeEnabled"_json_pointer, true);
+        quantizeGrid      = std::clamp(j.value("/ui/quantizeGrid"_json_pointer, 3), 0, 4);
+        beatOffset        = j.value("/ui/beatOffset"_json_pointer, 0.0f);
 
         if (j.contains("padQuantization")) {
             auto& pq = j["padQuantization"];

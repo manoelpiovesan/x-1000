@@ -28,7 +28,9 @@ X-1000 gives you the same build-up experience with any inexpensive MIDI controll
 
 ## Features
 
-- **Roll FX** with 1/8, 1/4, 1/2, 1/1 and 2/1 quantization, synced to Ableton Link
+- **Roll FX** with 1/8, 1/4, 1/2, 1/1 and 2/1 divisions, synced to Ableton Link
+- **Quantize** (on/off) with its own grid: rolls start and stop on the beat, like the RMX-1000
+- **TAP** tempo and **NUDGE** to line the grid up with what you hear
 - **Pitch** and **Filter** applied directly to the roll, plus a **Master** level
 - **Sample ring** to pick the sample, with a beat-synced glow
 - **MIDI Learn** for every control: roll buttons, knobs and sample prev/next

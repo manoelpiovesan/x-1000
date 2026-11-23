@@ -64,6 +64,9 @@ public:
                    float volume = 1.0f);
 
     void stopRoll(int padIndex);
+
+    // Stops the roll on the next quantize grid line (immediately if quantize is off).
+    void requestStopRoll(int padIndex, double currentBeat);
     void releasePad(int padIndex);
 
     // Realtime controls applied inside audio callback.
@@ -71,6 +74,14 @@ public:
     void setPitchSemitones(float semitones) noexcept;
     void setFilterAmount(float amount) noexcept;
 
+    // Quantize: when enabled, roll start/stop snap to the grid.
+    void setQuantizeEnabled(bool enabled) noexcept;
+    void setQuantizeGrid(QuantizeDivision grid) noexcept;
+    // Shifts the grid against the Link beat (in beats) to line up with what you hear.
+    void setBeatOffset(double beats) noexcept;
+
+    [[nodiscard]] bool quantizeEnabled() const noexcept;
+    [[nodiscard]] double beatOffset() const noexcept;
     [[nodiscard]] float masterVolume() const noexcept;
     [[nodiscard]] float pitchSemitones() const noexcept;
     [[nodiscard]] float filterAmount() const noexcept;
@@ -100,6 +111,16 @@ private:
 
     std::mutex scheduleMutex_;
     std::vector<ScheduledEvent> pendingEvents_;
+
+    struct PendingStop {
+        int padIndex{-1};
+        double stopAtBeat{0.0};
+    };
+    std::vector<PendingStop> pendingStops_;
+
+    std::atomic<bool> quantizeEnabled_{true};
+    std::atomic<int> quantizeGrid_{static_cast<int>(QuantizeDivision::Whole)};
+    std::atomic<double> beatOffset_{0.0};
 
     std::array<Voice, kMaxVoices> voices_{};
     std::array<std::atomic<bool>, xpad::samples::kPadCount> padActive_{};

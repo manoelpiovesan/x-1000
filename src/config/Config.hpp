@@ -40,6 +40,9 @@ struct XPadConfig {
     // RMX-style global controls
     std::string selectedSamplePath{};
     int globalQuantization{3}; // 0=2/1, 1=1/1, 2=1/2, 3=1/4, 4=1/8
+    bool quantizeEnabled{true};
+    int quantizeGrid{3};       // same indices as the roll buttons: 0=1/8 .. 4=2/1
+    float beatOffset{0.0f};    // nudge, in beats
 
     // Legacy per-pad quantization (kept for backward compatibility)
     std::array<int, 8> padQuantization{2,2,2,2,2,2,2,2};

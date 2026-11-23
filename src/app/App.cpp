@@ -104,6 +104,9 @@ void App::initSubsystems() {
     scheduler_->setMasterVolume(xCfg_.masterVolume);
     scheduler_->setPitchSemitones(xCfg_.pitchSemitones);
     scheduler_->setFilterAmount(xCfg_.filterAmount);
+    scheduler_->setQuantizeEnabled(xCfg_.quantizeEnabled);
+    scheduler_->setQuantizeGrid(toQuantDivisionFromRulerIndex(xCfg_.quantizeGrid));
+    scheduler_->setBeatOffset(xCfg_.beatOffset);
 
     audioEngine_ = std::make_shared<xpad::audio::AudioEngine>(
         xpad::audio::AudioConfig{
@@ -362,6 +365,35 @@ void App::applyAudioDeviceSelection(const std::string& deviceName) {
     xCfg_.save(xpad::config::XPadConfig::defaultPath());
 }
 
+void App::setQuantizeEnabled(bool enabled) {
+    xCfg_.quantizeEnabled = enabled;
+    if (scheduler_) scheduler_->setQuantizeEnabled(enabled);
+}
+
+void App::setQuantizeGrid(int gridIndex) {
+    xCfg_.quantizeGrid = std::clamp(gridIndex, 0, 4);
+    if (scheduler_) scheduler_->setQuantizeGrid(toQuantDivisionFromRulerIndex(xCfg_.quantizeGrid));
+}
+
+void App::tapTempo() {
+    const auto now = std::chrono::steady_clock::now();
+    // A pause longer than 2 s starts a new measurement.
+    if (!tapTimes_.empty() && now - tapTimes_.back() > std::chrono::seconds(2)) tapTimes_.clear();
+    tapTimes_.push_back(now);
+    while (tapTimes_.size() > 8) tapTimes_.pop_front();
+    if (tapTimes_.size() < 2) return;
+
+    const double seconds = std::chrono::duration<double>(tapTimes_.back() - tapTimes_.front()).count();
+    const double bpm = 60.0 * static_cast<double>(tapTimes_.size() - 1) / seconds;
+    if (bpm >= 40.0 && bpm <= 240.0 && linkManager_) linkManager_->setTempoBpm(bpm);
+}
+
+void App::nudgeBeat(int direction) {
+    constexpr float kNudgeStep = 0.01f; // beats
+    xCfg_.beatOffset = std::clamp(xCfg_.beatOffset + kNudgeStep * static_cast<float>(direction), -0.5f, 0.5f);
+    if (scheduler_) scheduler_->setBeatOffset(xCfg_.beatOffset);
+}
+
 void App::beginMidiLearn(const std::string& controlId) {
     if (!midiLearnMode_) return;
     pendingMidiLearnControl_ = controlId;
@@ -373,6 +405,15 @@ void App::applyMidiControl(const std::string& controlId, const xpad::midi::MidiM
         const float vol = msg.isCC() ? (static_cast<float>(msg.data2) / 127.0f)
                                      : std::max(0.05f, static_cast<float>(msg.data2) / 127.0f);
         onTrigger(std::max(0.05f, vol));
+        return;
+    }
+
+    if (controlId == "quantize" || controlId == "tap" ||
+        controlId == "nudge_minus" || controlId == "nudge_plus") {
+        if (msg.data2 == 0) return; // ignore button release / note-off style values
+        if (controlId == "quantize") setQuantizeEnabled(!xCfg_.quantizeEnabled);
+        else if (controlId == "tap") tapTempo();
+        else nudgeBeat(controlId == "nudge_plus" ? 1 : -1);
         return;
     }
 
@@ -498,7 +539,7 @@ void App::selectRoll(int rollButtonIndex, float volume) {
 
     // Deselect behavior: clicking active button again turns roll off.
     if (rollButtonIndex < 0) {
-        scheduler_->stopRoll(0);
+        scheduler_->requestStopRoll(0, linkManager_->snapshot().beat);
         activeRollButton_ = -1;
         xCfg_.globalQuantization = -1;
         return;
@@ -564,6 +605,10 @@ void App::runGui() {
     handlers.onRulerChange = [this](int rulerIndex) {
         selectRoll(rulerIndex, 1.0f);
     };
+    handlers.onQuantizeChange = [this](bool enabled) { setQuantizeEnabled(enabled); };
+    handlers.onQuantizeGridChange = [this](int index) { setQuantizeGrid(index); };
+    handlers.onTap = [this]() { tapTempo(); };
+    handlers.onNudge = [this](int direction) { nudgeBeat(direction); };
     handlers.onMidiPortChange = [this](const std::string& portName) {
         applyMidiPortSelection(portName);
     };
