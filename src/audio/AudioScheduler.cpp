@@ -211,8 +211,9 @@ std::uint64_t AudioScheduler::loopSliceFrames(const Voice& voice, double tempoBp
     const double secondsPerBeat = 60.0 / bpm;
     const double loopSeconds = divisionToBeats(voice.loopDivision) * secondsPerBeat;
     const double framesD = loopSeconds * static_cast<double>(voice.sample->sampleRate);
-    const std::uint64_t frames = static_cast<std::uint64_t>(std::max(1.0, std::floor(framesD)));
-    return std::min<std::uint64_t>(frames, voice.sample->frameCount);
+    // Not capped to the sample length: a slice longer than the sample is padded
+    // with silence, so the loop period always matches the division (e.g. 2/1).
+    return static_cast<std::uint64_t>(std::max(1.0, std::floor(framesD)));
 }
 
 void AudioScheduler::processAudio(float* outputBuffer,
@@ -329,6 +330,9 @@ void AudioScheduler::processAudio(float* outputBuffer,
             }
 
             const std::uint64_t i0 = static_cast<std::uint64_t>(sourcePos);
+            if (i0 >= smp.frameCount) {
+                continue; // silence between the sample end and the loop end
+            }
             const std::uint64_t i1 = std::min<std::uint64_t>(i0 + 1, smp.frameCount - 1);
             const float frac = static_cast<float>(sourcePos - static_cast<double>(i0));
 
@@ -406,16 +410,18 @@ AudioScheduler::makeStretcher(const xpad::samples::Sample& sample) const {
 }
 
 // Feeds `frames` source frames, wrapping at the loop end, into the stretcher.
+// Past the sample end (loop longer than the sample) it feeds silence.
 void AudioScheduler::feedStretcher(Voice& voice, std::uint64_t frames, std::uint64_t endFrame) {
     const auto& smp = *voice.sample;
-    endFrame = std::clamp<std::uint64_t>(endFrame, 1, smp.frameCount);
+    endFrame = std::max<std::uint64_t>(endFrame, 1);
     frames = std::min<std::uint64_t>(frames, kScratchFrames);
 
     std::uint64_t pos = static_cast<std::uint64_t>(voice.feedPosition);
     for (std::uint64_t i = 0; i < frames; ++i) {
         if (pos >= endFrame) pos = 0;
-        inScratch_[0][i] = smp.data[pos * 2 + 0];
-        inScratch_[1][i] = smp.data[pos * 2 + 1];
+        const bool inSample = pos < smp.frameCount;
+        inScratch_[0][i] = inSample ? smp.data[pos * 2 + 0] : 0.0f;
+        inScratch_[1][i] = inSample ? smp.data[pos * 2 + 1] : 0.0f;
         ++pos;
     }
     voice.feedPosition = static_cast<double>(pos);
