@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(XPadLink VERSION 0.2.0 LANGUAGES CXX)
+project(X1000VERSION 0.2.0 LANGUAGES CXX)
 
 option(XPAD_USE_ABLETON_LINK "Build with Ableton Link SDK support" OFF)
 set(ABLETON_LINK_DIR "" CACHE PATH "Path to Ableton Link SDK root")
@@ -133,10 +133,10 @@ if(XPAD_USE_ABLETON_LINK)
 endif()
 
 # --- Executables -------------------------------------------------------------
-add_executable(xpad_link src/main.cpp)
-target_link_libraries(xpad_link PRIVATE xpad_core)
+add_executable(x-1000 src/main.cpp)
+target_link_libraries(x-1000 PRIVATE xpad_core)
 
-add_executable(xpad_link_tests tests/LinkManagerTests.cpp)
-target_link_libraries(xpad_link_tests PRIVATE xpad_core)
+add_executable(x-1000-tests tests/LinkManagerTests.cpp)
+target_link_libraries(x-1000-tests PRIVATE xpad_core)
 
-add_test(NAME xpad_link_tests COMMAND xpad_link_tests)
+add_test(NAME x-1000-tests COMMAND x-1000-tests)

@@ -11,7 +11,7 @@ namespace {
 
 void printUsage() {
     xpad::core::Logger::info(
-        "Uso: xpad_link [--tempo <bpm>] [--headless] [--duration-seconds <n>] "
+        "Uso: x-1000[--tempo <bpm>] [--headless] [--duration-seconds <n>] "
         "[--print-ms <n>] [--simulation-only] [--config <path>]");
 }
 

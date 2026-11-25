@@ -1,4 +1,4 @@
-# Projeto: XPad Link
+# Projeto: X-1000
 
 ## Objetivo
 

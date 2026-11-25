@@ -88,12 +88,12 @@ jobs:
           rm -rf dist
           mkdir -p dist
 
-          cp build-windows/xpad_link.exe dist/
-          cp build-windows/xpad_link_tests.exe dist/
+          cp build-windows/x-1000.exe dist/
+          cp build-windows/x-1000-tests.exe dist/
 
           # Copy runtime DLLs discovered from the built executable.
           if command -v ntldd >/dev/null 2>&1; then
-            ntldd -R dist/xpad_link.exe \
+            ntldd -R dist/x-1000.exe \
               | awk '/=>/ && /\/ucrt64\/bin\/.*\.dll/ {print $3} /\/ucrt64\/bin\/.*\.dll/ && $1 ~ /^\// {print $1}' \
               | sort -u > dlls.txt || true
             if [ -f dlls.txt ]; then
@@ -131,22 +131,27 @@ jobs:
           ls -la dist
 
       - name: Create zip package
-        shell: msys2 {0}
+        shell: pwsh
         run: |
-          set -e
-          VERSION="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-manual}}"
-          VERSION="${VERSION//\//-}"
-          ZIP_NAME="xpad-link-windows-${VERSION}.zip"
-          ARTIFACT_NAME="xpad-link-windows-${VERSION}-raw"
-          tar -a -cf "$ZIP_NAME" -C dist .
-          echo "ZIP_NAME=$ZIP_NAME" >> "$GITHUB_ENV"
-          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> "$GITHUB_ENV"
+          $ErrorActionPreference = 'Stop'
+          $version = if ($env:GITHUB_HEAD_REF) { $env:GITHUB_HEAD_REF } elseif ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { 'manual' }
+          $version = $version -replace '[\\/:]', '-'
+          $packageName = "x-1000-windows-$version"
+          $zipName = "$packageName.zip"
+          # Compress-Archive writes a real ZIP. (MSYS2's GNU tar ignores -a and
+          # writes a plain tar archive, which is what produced the broken .zip.)
+          Compress-Archive -Path dist/* -DestinationPath $zipName -Force
+          "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+          "PACKAGE_NAME=$packageName" >> $env:GITHUB_ENV
 
+      # GitHub already zips workflow artifacts on download, so upload the folder
+      # (uploading the .zip here would give a zip inside a zip).
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARTIFACT_NAME }}
+          name: ${{ env.PACKAGE_NAME }}
           path: dist/
+          if-no-files-found: error
 
       - name: Attach artifact to release
         if: github.event_name == 'release'
