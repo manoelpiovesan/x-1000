@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(X1000VERSION 0.2.0 LANGUAGES CXX)
+project(X1000 VERSION 0.2.0 LANGUAGES CXX)
 
 option(XPAD_USE_ABLETON_LINK "Build with Ableton Link SDK support" OFF)
 set(ABLETON_LINK_DIR "" CACHE PATH "Path to Ableton Link SDK root")
